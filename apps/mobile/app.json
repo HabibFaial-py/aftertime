@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "AfterTime",
+    "slug": "aftertime",
+    "version": "0.1.0",
+    "scheme": "aftertime",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["android", "ios"],
+    "plugins": ["expo-router"]
+  }
+}
