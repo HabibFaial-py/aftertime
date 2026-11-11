@@ -4,7 +4,7 @@ Updated: 2026-11-11
 
 ## Current phase
 
-Phase 1, Part 1: database design and local migration draft ready for human review. The user reports Phase 0 complete and running locally; the older Part 3 record below describes the earlier interrupted attempt, not a new verification.
+Phase 1, authentication foundation Part A. The user reports Phase 0 working and the initial migration applied, with RLS and role grants configured; those database claims were not independently checked in this task. Earlier records are historical.
 
 ## Repository inspection
 
@@ -141,3 +141,11 @@ implement GET /health, and add a basic automated test.
 - Added a recipient state check allowing historical claims after `ON DELETE SET NULL`, documented self and external states, expiry/revocation responsibilities, privileged-client grant requirements and a minimal isolated test plan.
 - Static review only; no SQL was executed, no Supabase connection was made and no database tests were run. Server access method, invitation rotation and post-claim revocation policy remain decisions.
 - Next: review decisions and obtain authorization for isolated testing; do not apply to Supabase yet.
+
+## Phase 1 — authentication foundation Part A
+
+- Added environment configuration, asymmetric JWKS token verification and `GET /v1/auth/me`; preserved `/health`. Added placeholder-only root `.env.example` and setup documentation.
+- Added PyJWT 2.15.1 with cryptography 50.0.2, cffi 2.1.1 and pycparser 3.12 to the lockfile. Installation into root `.venv` succeeded after a sandboxed pip attempt could not find the package and a network-enabled retry succeeded.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest`: 11 passed, 2 warnings (existing Starlette HTTPX deprecation and test-only short HMAC key warning). From root, `.\.venv\Scripts\python.exe -m pip check`: no broken requirements.
+- Tests use local keys and mocked key lookup; no live Supabase token or project configuration was tested. Confirm actual signing algorithm, issuer and audience. HS256 is intentionally unsupported; Supabase recommends Auth server verification for legacy symmetric tokens, which remains future work if needed.
+- Next: verify development project signing configuration and plan the appropriate integration and cross-account authorization tests before building auth-dependent features.
