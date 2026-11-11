@@ -1,10 +1,10 @@
 # AfterTime status
 
-Updated: 2026-11-10
+Updated: 2026-11-11
 
 ## Current phase
 
-Phase 0, Part 1: Project foundation and mobile scaffold. Source files created; installation and acceptance checks blocked. This part is **not fully validated or complete**. No later milestone work has begun.
+Phase 0, Part 2: FastAPI backend foundation complete. Part 1 mobile verification is recorded below. The original Part 1 inspection and blocked checks are retained as historical context.
 
 ## Repository inspection
 
@@ -102,3 +102,13 @@ Date: November 10, 2026
 ### Next task
 Phase 0 — Part 2: Scaffold the FastAPI backend,
 implement GET /health, and add a basic automated test.
+
+## Phase 0 — Part 2: FastAPI backend foundation
+
+- Added a minimal FastAPI app and `GET /health`, plus a test for its status and JSON response.
+- Installed into the existing root `.venv` using Python 3.11.9. Direct pins: FastAPI 0.162.3, Uvicorn 0.54.0, pytest 9.2.0, HTTPX 0.28.1. `services/api/requirements-lock.txt` records resolved dependencies.
+- From the repository root, `.\.venv\Scripts\python.exe -m pip install -r services/api/requirements.txt` succeeded with network access after the sandboxed attempt failed with WinError 10013.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest` passed: 1 test, 1 warning. Starlette warns that HTTPX-based TestClient is deprecated in favor of httpx2; review when updating dependencies.
+- From the repository root, `.\.venv\Scripts\python.exe -m pip check` passed: no broken requirements.
+- No remaining blocker for this slice. Server startup was not manually exercised; install, startup, and test commands are documented in `services/api/README.md`.
+- Next task: choose the next Phase 0 slice; web and CI remain planned and were not implemented here.
