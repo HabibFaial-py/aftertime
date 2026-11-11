@@ -4,7 +4,7 @@ Updated: 2026-11-11
 
 ## Current phase
 
-Phase 1, Expo mobile authentication implemented; manual Android acceptance pending. The user reports migrations 0001/0002, RLS, profile provisioning and live FastAPI authentication verified. Earlier records are historical.
+Phase 1, mobile-to-FastAPI integration implemented; Android integration acceptance pending. The user reports mobile signup, verification, sign-in, persistence and logout tested on Android, and FastAPI JWT verification tested live. Earlier records are historical.
 
 ## Repository inspection
 
@@ -167,3 +167,10 @@ implement GET /health, and add a basic automated test.
 - No live credentials, Android, signup/email, refresh or native storage tests were used/run. README provides manual cases, including storage errors and offline logout limits.
 - Configure mobile public env values, enabled email confirmation and trusted reachable Supabase Site URL. Browser confirmation followed by manual app sign-in is supported; automatic deep-link return is not implemented for Expo Go.
 - Next: complete manual Android authentication acceptance and review dependency advisories before the next milestone.
+
+## Phase 1 — mobile-to-FastAPI integration
+
+- Added an authenticated client for `/v1/auth/me`, a Home connection status and retry, and the public API URL environment placeholder. Tokens remain in the existing session storage and are not logged. Requests use a configurable 10-second default deadline and cancellation, and production builds require HTTPS; private LAN HTTP is allowed in development only.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed after fixing the initial nullable-client and effect lint failures. `npx expo install --check` initially failed with EACCES; the network-enabled retry completed but exited 1 because Expo now recommends patch updates: expo 58.0.24, expo-constants 58.0.16, expo-linking 58.0.17, expo-router 58.0.31, expo-secure-store 58.0.3 and expo-status-bar 58.0.5. Existing versions were preserved; no dependencies were added or updated.
+- No live backend request or Android integration test was run in this task. Configure the mobile API URL with the laptop's current LAN IP and port; the README documents setup, HTTPS requirement and manual tests.
+- Next: run the Android connection, failure, retry and logout tests; review Expo patch updates separately.

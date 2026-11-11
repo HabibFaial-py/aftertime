@@ -19,6 +19,27 @@ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. Expo embeds these public values in the
 app. Never use a secret/service-role key. Root ignore rules exclude .env.
 Restart Expo and reload after changes. No actual credentials are supplied.
 
+Set `EXPO_PUBLIC_API_BASE_URL` in that same `.env` to the FastAPI server's
+origin, for example `http://<laptop-lan-ip>:8001` in local development. On
+Android, `localhost` refers to the phone, not the laptop: use the laptop's
+current private LAN IP and put both devices on the same network. Find the IP
+with `ipconfig`; it can change. Ensure the server listens on the network, for
+example from `services/api` run
+`..\..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001`,
+and allow the port on the private firewall if necessary. Expo Go or the device
+may restrict cleartext HTTP; use an HTTPS setup if the local connection fails for
+that reason. HTTP sends the bearer token without transport encryption: use it
+only on a trusted local development network. Non-development builds require
+HTTPS; development HTTP is accepted only for localhost or private IPv4 LAN
+addresses. Do not put a production URL or token in source code.
+
+Home checks `/v1/auth/me` using the current Supabase access token with a
+10-second timeout (overridable in the client method), displays Checking,
+Connected or Failed, and offers retry. A failed check does not sign the user
+out. A 401/403 or missing/expired session may require signing in again. The
+client cancels pending network requests when Home unmounts and does not send a
+request without an active session. Never share tokens when diagnosing failures.
+
 Use Node 24 and the SDK 58-compatible Android Expo Go app. Put the phone and PC
 on the same Wi-Fi and scan the terminal QR code. Stop with Ctrl+C.
 
@@ -91,6 +112,14 @@ Expired links can be resent from the app; wait before retrying rate-limited requ
 7. Revoke a test session server-side, wait for access-token expiry and verify
    refresh failure removes access. Test realistic session sizes and simulated
    SecureStore read/write/delete failures in a test environment.
+
+For backend integration, sign in and confirm Home changes from Checking to
+Connected. Stop FastAPI or disconnect Wi-Fi, tap Retry and confirm Failed;
+restart it and retry to see Connected. Verify a missing or invalid API URL,
+an expired/invalid session and an unauthorized backend response show failure.
+Log out during a pending request, then verify signed-out navigation and that
+no stale status appears on the next user's Home. Repeat on a release build with
+HTTPS before production. These integration scenarios have not been tested here.
 
 ## Sources and results
 
