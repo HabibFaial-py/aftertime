@@ -4,7 +4,7 @@ Updated: 2026-11-11
 
 ## Current phase
 
-Phase 0, Part 3: web foundation source created; installation and validation remain incomplete. Earlier records are retained below.
+Phase 1, Part 1: database design and local migration draft ready for human review. The user reports Phase 0 complete and running locally; the older Part 3 record below describes the earlier interrupted attempt, not a new verification.
 
 ## Repository inspection
 
@@ -122,3 +122,22 @@ implement GET /health, and add a basic automated test.
 - Checks attempted from `apps/web` after the incomplete installation: `npm run typecheck` failed with TS2614 for Next's Metadata export; `npm run lint` failed because eslint was not found; `npm run build` failed because next was not found. These are not successful validation results. No browser or responsive visual check was performed.
 - Blocker: complete installation and resolve any dependency or check errors. From the repository root run `Set-Location apps/web`, `npm install`, `npm run typecheck`, `npm run lint`, and `npm run build`. Start locally with `npm run dev`.
 - Next task: finish and verify the web foundation before selecting the next Phase 0 milestone.
+
+## Phase 1 — Part 1: database design
+
+- Drafted `services/api/migrations/0001_initial.sql` and `docs/DATABASE_DESIGN.md` with six tables, constraints, indexes and default-deny client access.
+- Reviewed SQL and security design statically; no SQL was executed, no database connection was made, and no PostgreSQL, migration or RLS tests were run. No credentials were configured.
+- Blockers before application: human review, decisions and isolated database validation described in the design. The backend privileged role and migration runner are not provisioned.
+- Next task: obtain approval and resolve open decisions, then test the migration and access controls in an isolated environment before any cloud application.
+
+## Phase 1 — migration review
+
+- Reviewed and strengthened invitation, capsule timestamp and notification state constraints, and documented the database/backend boundary and access alternatives.
+- Reviewed SQL ordering and permissions statically. No SQL was executed, no database was contacted, and no PostgreSQL or RLS tests were run. `git diff --check` is a whitespace check only.
+- Next: review open design decisions and, with authorization, test the draft on an isolated Supabase-compatible database before considering cloud application. Backend access and migration tooling remain unprovisioned.
+
+## Phase 1 — recipient and server-access review
+
+- Added a recipient state check allowing historical claims after `ON DELETE SET NULL`, documented self and external states, expiry/revocation responsibilities, privileged-client grant requirements and a minimal isolated test plan.
+- Static review only; no SQL was executed, no Supabase connection was made and no database tests were run. Server access method, invitation rotation and post-claim revocation policy remain decisions.
+- Next: review decisions and obtain authorization for isolated testing; do not apply to Supabase yet.
