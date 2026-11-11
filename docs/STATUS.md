@@ -4,7 +4,7 @@ Updated: 2026-11-11
 
 ## Current phase
 
-Phase 1, authentication foundation Part A. The user reports Phase 0 working and the initial migration applied, with RLS and role grants configured; those database claims were not independently checked in this task. Earlier records are historical.
+Phase 1, profile provisioning design. The user reports the initial migration applied and real Supabase ES256 authentication verified. Migration 0002 is a local review draft only; no database connection or execution occurred in this task. Earlier records are historical.
 
 ## Repository inspection
 
@@ -149,3 +149,11 @@ implement GET /health, and add a basic automated test.
 - From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest`: 11 passed, 2 warnings (existing Starlette HTTPX deprecation and test-only short HMAC key warning). From root, `.\.venv\Scripts\python.exe -m pip check`: no broken requirements.
 - Tests use local keys and mocked key lookup; no live Supabase token or project configuration was tested. Confirm actual signing algorithm, issuer and audience. HS256 is intentionally unsupported; Supabase recommends Auth server verification for legacy symmetric tokens, which remains future work if needed.
 - Next: verify development project signing configuration and plan the appropriate integration and cross-account authorization tests before building auth-dependent features.
+
+## Phase 1 — profile provisioning design
+
+- Added `services/api/migrations/0002_profile_provisioning.sql`: restricted SECURITY DEFINER trigger, explicit postgres ownership, revoked client execution and idempotent missing-profile backfill. Existing RLS and table grants are unchanged; 0001 was not edited.
+- Updated `docs/DATABASE_DESIGN.md` with privilege assumptions, signup rollback behavior, verification SQL and the dedicated-owner alternative. The postgres-owned function follows Supabase's minimal trigger pattern but retains a privileged owner; that tradeoff requires review.
+- Static review only; no migration, SQL verification queries, PostgreSQL or Auth signup tests executed. No secrets, application changes, commits or deployment.
+- `git diff --check` completed without whitespace errors (line-ending warnings only); `git diff -- services/api/migrations/0001_initial.sql` was empty. These are file checks, not database validation.
+- Next: review migration ownership and failure behavior, then authorize isolated tests for backfill, new signups, duplicates, client denials, concurrent inserts and failure rollback before migration approval.
