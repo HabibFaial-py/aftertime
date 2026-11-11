@@ -1,7 +1,11 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { Action } from '../components/ui';
+import { useAuth } from '../lib/auth';
 
 export default function WelcomeScreen() {
+  const { expired } = useAuth();
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -15,6 +19,11 @@ export default function WelcomeScreen() {
           <Text style={styles.description}>
             A little space for words worth waiting for.
           </Text>
+          <View style={{ gap: 12, marginTop: 28, width: '100%' }}>
+            {expired && <Text style={styles.description}>Your session expired. Connect to the internet or sign in again.</Text>}
+            <Action title="Sign in" onPress={() => router.push('/sign-in')} />
+            <Action title="Create an account" onPress={() => router.push('/sign-up')} />
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

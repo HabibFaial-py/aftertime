@@ -4,7 +4,7 @@ Updated: 2026-11-11
 
 ## Current phase
 
-Phase 1, profile provisioning design. The user reports the initial migration applied and real Supabase ES256 authentication verified. Migration 0002 is a local review draft only; no database connection or execution occurred in this task. Earlier records are historical.
+Phase 1, Expo mobile authentication implemented; manual Android acceptance pending. The user reports migrations 0001/0002, RLS, profile provisioning and live FastAPI authentication verified. Earlier records are historical.
 
 ## Repository inspection
 
@@ -157,3 +157,13 @@ implement GET /health, and add a basic automated test.
 - Static review only; no migration, SQL verification queries, PostgreSQL or Auth signup tests executed. No secrets, application changes, commits or deployment.
 - `git diff --check` completed without whitespace errors (line-ending warnings only); `git diff -- services/api/migrations/0001_initial.sql` was empty. These are file checks, not database validation.
 - Next: review migration ownership and failure behavior, then authorize isolated tests for backfill, new signups, duplicates, client denials, concurrent inserts and failure rollback before migration approval.
+
+## Phase 1 — Expo mobile authentication
+
+- Added welcome actions, sign-in/signup, email confirmation instructions/resend, protected home and local logout. Added Supabase client, SecureStore adapter, session restoration/listener, foreground refresh and expiry handling. No table queries.
+- Installed exact @supabase/supabase-js 2.119.0, react-native-url-polyfill 4.0.0 and expo-secure-store 58.0.2 with lockfile; retained existing Expo/Router/React Native versions.
+- Added mobile .env.example. `git check-ignore -v apps/mobile/.env` confirmed root ignore rule line 10; no ignore changes.
+- From apps/mobile: `npx expo install --check` passed after network-approved retry of EACCES; `npm run typecheck` and `npm run lint` passed after initial AppState type and effect-state lint fixes. npm reported 10 moderate vulnerabilities; no force fixes performed.
+- No live credentials, Android, signup/email, refresh or native storage tests were used/run. README provides manual cases, including storage errors and offline logout limits.
+- Configure mobile public env values, enabled email confirmation and trusted reachable Supabase Site URL. Browser confirmation followed by manual app sign-in is supported; automatic deep-link return is not implemented for Expo Go.
+- Next: complete manual Android authentication acceptance and review dependency advisories before the next milestone.
