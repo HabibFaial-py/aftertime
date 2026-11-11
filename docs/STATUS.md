@@ -4,7 +4,7 @@ Updated: 2026-11-11
 
 ## Current phase
 
-Phase 0, Part 2: FastAPI backend foundation complete. Part 1 mobile verification is recorded below. The original Part 1 inspection and blocked checks are retained as historical context.
+Phase 0, Part 3: web foundation source created; installation and validation remain incomplete. Earlier records are retained below.
 
 ## Repository inspection
 
@@ -112,3 +112,13 @@ implement GET /health, and add a basic automated test.
 - From the repository root, `.\.venv\Scripts\python.exe -m pip check` passed: no broken requirements.
 - No remaining blocker for this slice. Server startup was not manually exercised; install, startup, and test commands are documented in `services/api/README.md`.
 - Next task: choose the next Phase 0 slice; web and CI remain planned and were not implemented here.
+
+## Phase 0 — Part 3: Next.js web foundation
+
+- Added a responsive landing page and Next.js App Router, TypeScript, Tailwind and ESLint configuration under `apps/web`.
+- Requested pins: Next.js and eslint-config-next 16.4.6, React and React DOM 19.3.0, Tailwind and @tailwindcss/postcss 4.1.18, PostCSS 8.5.6, TypeScript 5.9.3, ESLint 9.39.2, @types/node 24.10.1, @types/react 19.2.7 and @types/react-dom 19.2.3. Installation did not finish, so compatibility of the full set is unverified and no lockfile was produced. npm warned ESLint 9.39.2 is no longer supported.
+- Node 24.19.0 and npm 12.0.2 are installed. Next.js documentation specifies Node 20.9 or newer.
+- `npm install --fetch-retries=0 --fetch-timeout=15000` failed with EACCES reaching the npm registry and writing the default cache log. A network-approved `npm install` downloaded packages but was interrupted after several minutes without completion.
+- Checks attempted from `apps/web` after the incomplete installation: `npm run typecheck` failed with TS2614 for Next's Metadata export; `npm run lint` failed because eslint was not found; `npm run build` failed because next was not found. These are not successful validation results. No browser or responsive visual check was performed.
+- Blocker: complete installation and resolve any dependency or check errors. From the repository root run `Set-Location apps/web`, `npm install`, `npm run typecheck`, `npm run lint`, and `npm run build`. Start locally with `npm run dev`.
+- Next task: finish and verify the web foundation before selecting the next Phase 0 milestone.
