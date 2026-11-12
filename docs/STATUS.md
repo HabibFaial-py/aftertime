@@ -4,7 +4,7 @@ Updated: 2026-11-12
 
 ## Current phase
 
-Phase 2, Part 1: secure server-side data access implemented and mock-tested; live connectivity intentionally not tested. The user reports Phase 0 and Phase 1 complete, all six Supabase tables and service_role privileges verified, ES256 token verification working, and Android successfully calling `/v1/auth/me`. These live results are user-reported, not independently rechecked in this task. Earlier records are historical.
+Phase 2, Prompt #009B: self-capsule creation API implemented and mock-tested. The user reports migration 0003 tested in a disposable Supabase project and applied to the main development database; neither was independently rechecked here. Earlier records are historical.
 
 ## Repository inspection
 
@@ -191,3 +191,47 @@ implement GET /health, and add a basic automated test.
 - Replaced secret-shaped test literals with clearly fake runtime-constructed placeholders while preserving valid and invalid credential cases; application behavior is unchanged.
 - From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: 43 passed, 2 existing warnings (Starlette TestClient deprecation and short test HMAC key). From root, `git diff --check`: passed, with line-ending warnings only.
 - No real environment secrets were accessed or changed. No Git history changes or push were performed. Next: review the fix and decide separately how to address the already-existing rejected commit.
+
+## Phase 2 — Prompt #009: atomicity gate
+
+- Read the required report, design, status, backend source, migrations, tests and README. The repository has only a read-only Data API check; no creation RPC or direct database transaction infrastructure exists. Separate capsule/recipient HTTP inserts can leave partial data, and compensating deletion is not atomic.
+- Confirmed title has no database maximum; body is limited to 2,000 characters but currently allows empty text. Self-recipient requires owner profile ID, claim timestamp and normalized nonempty intended_email, with null invitation fields. Profiles contain no email and the verifier returns only a verified UUID.
+- Documented the exact proposed `0003_create_self_capsule.sql` RPC, access restrictions, server-derived email and timestamps, safe response projection, API contract and verification requirements in `services/api/README.md`. No migration file was created and no capsule code or tests were implemented, following the user's explicit stop-before-writes instruction.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **43 passed, 2 existing warnings** (Starlette HTTPX TestClient deprecation and test-only short HMAC key). This is baseline regression coverage, not capsule or transaction validation. No live project access or real credentials used.
+- Only README and STATUS changed. No application, existing migration, schema, mobile/web, dependency, Git history, commit, push or deployment changes.
+- `git diff --check`: passed with line-ending warnings only.
+- Next: obtain approval for the narrow server-only RPC migration proposal, then implement and validate rollback/role restrictions in an isolated database before enabling capsule writes. Timeouts after commit still need an explicit idempotency/retry policy; do not automatically retry creation.
+
+## Phase 2 — Prompt #009A: atomic self-capsule RPC migration
+
+- Added `services/api/migrations/0003_create_self_capsule.sql`: `public.aftertime_create_self_capsule(uuid, text, text, timestamptz)`, explicit four-column safe return type, postgres-owned SECURITY DEFINER, empty search_path, UTC and service_role execution grant. PUBLIC/anon/authenticated execution explicitly revoked. Migrations 0001/0002, table definitions, table grants and RLS unchanged.
+- Validates nonblank title/body, body <= 2,000 characters, finite unlock time in `(database now, database now + 90 days]`. Locks the confirmed Auth user and existing profile, derives normalized email internally, and uses one captured database clock instant for creation/claim timestamps. Inserts capsule and self-recipient in one call without swallowing failures. No media, invitation or notification operations.
+- Added `services/api/tests/sql/bootstrap.sql` and `test_create_self_capsule.sql` for a fresh disposable plain PostgreSQL cluster, with minimal simulated Auth columns and roles. Supplied exact Docker/psql commands in README. SQL cases cover valid creation, safe projection, recipient-failure rollback, invalid inputs/owners, execution restrictions and RLS retention. No real or secret-shaped credentials added.
+- Environment discovery: `Get-Command psql,postgres,pg_ctl,docker -ErrorAction SilentlyContinue` found only Docker. `docker context ls` exited 1 with access denied reading Docker configuration/context metadata. No usable local PostgreSQL test environment established; no SQL, Docker container or live Supabase operation executed. No credentials read or configured.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **43 passed, 2 existing warnings** (Starlette HTTPX TestClient deprecation and test-only short HMAC key). These tests validate unchanged Python behavior, not this migration. `git diff --check` passed with line-ending warnings only. Diff for migrations 0001/0002 was empty.
+- README/STATUS already had uncommitted Prompt #009 documentation at task start; preserved and extended it. No endpoint, mobile/web, dependency, commit, push or deployment changes.
+- Blocker before use: execute the supplied SQL in disposable PostgreSQL, then validate against Supabase's actual Auth schema, effective role memberships/default grants, concurrent Auth updates/deletion and Data API function visibility. The broad postgres owner and trusted backend owner_id assertion are explicit security boundaries. API input/error sanitization and naive-time rejection remain future work; RPC atomicity does not provide retry idempotency.
+- Next: isolated database validation and review, then separately authorize any migration application and endpoint implementation. Stop at Prompt #009A.
+
+## Supabase SQL Editor test-script review
+
+- Reviewed bootstrap.sql, test_create_self_capsule.sql and migration 0003. Original scripts are for an empty plain PostgreSQL database and psql: backslash commands, role/mock Auth creation, fixed database/user IDs, a cascading profile deletion, global counts and an unscoped failure trigger make them unsuitable for direct SQL Editor use. Migration 0003 remains unchanged and must not be reapplied for testing.
+- Added `services/api/tests/sql/test_create_self_capsule_sql_editor.sql`: one DO statement using an existing dedicated confirmed test Auth user/profile, supplied explicitly by UUID and matching email. Tests success as service_role, exact safe output fields, self-recipient consistency, validation, role privileges/denials, RLS and forced second-insert rollback. It uses unique helper names and an owner-scoped trigger, then rolls back all test writes/DDL even on success. No Auth mutations or cleanup DELETEs. A three-second lock timeout bounds waiting for trigger DDL locks; use an idle disposable project.
+- Updated README with incompatibilities, exact file to copy, prerequisites, expected successful completion/optional PASS notice, cleanup semantics and limitations. The existing test user/profile remain untouched; SQL Editor tests do not cover HTTP/JWT behavior, managed Auth failure fixtures, concurrency or exact time boundaries.
+- Verification is static review and whitespace checking only. No SQL tests, backend tests, credentials, database connections, migration execution, commit, push or deployment performed in this task, as requested.
+- `git diff --check` passed with line-ending warnings only.
+- Next: user runs the entire SQL Editor script as postgres in the disposable project after replacing the two test-identity placeholders, then records actual results. Runtime correctness is not claimed before that execution.
+
+## Phase 2 — Prompt #009B: self-capsule creation API
+
+- Added authenticated `POST /v1/capsules`, strict request validation and a four-field safe metadata response. Identity comes only from the existing verified JWT subject. Extra request fields are rejected; request-validation responses never echo input. Times require an explicit offset, are normalized to UTC, and checked against API server time; migration 0003's database clock and checks remain authoritative.
+- Added one repository RPC call with only the verified owner, title, body and unlock time. The server-only key remains in the apikey header, no user JWT is forwarded, no redirects or automatic retries occur, and fixed 422/403/503 messages hide provider errors. No direct table inserts, migration/RLS changes or new dependencies.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **75 passed, 2 warnings** (existing Starlette HTTPX TestClient deprecation and test-only short HMAC key). Tests use generated JWT signing keys and mocked HTTP; no real credentials or live DB operations. From root, `git diff --check` passed with line-ending warnings only.
+- No mobile/web changes, commit, push or deploy. Prior uncommitted migration and SQL test files were preserved. An uncertain timeout can follow a successful commit; idempotency and rate limiting remain future work. API clock validation can reject near-boundary requests; database validation makes the final decision. `/health` and `/v1/auth/me` remain covered.
+- Next: independently review and test the endpoint in a disposable environment when separately authorized, then plan idempotency/rate limits and the next capsule operation.
+
+## Local self-capsule integration script
+
+- Prepared `.venv/aftertime_test_capsule.py` in the existing gitignored virtualenv directory. It authenticates a designated development test account using environment variables or prompts, then makes at most one local creation request, checking the four safe response fields. No secrets, JWTs or response bodies are printed; failures after the POST report an uncertain outcome and prohibit blind retries.
+- Confirmed `git check-ignore -v .venv/aftertime_test_capsule.py` matches `.gitignore:2`; `git ls-files -- .venv/aftertime_test_capsule.py` returned no tracked entry. Parsed the script with Python `ast.parse`: `Syntax OK`. No script execution, live requests or credentials were used. No application or migration changes.
+- Next: the user can run the script once after confirming the development project and designated account; record the actual outcome, and inspect the database before considering another attempt if the result is uncertain.

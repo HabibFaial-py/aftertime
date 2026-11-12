@@ -1,6 +1,6 @@
 # AfterTime API
 
-The API exposes `GET /health`, which returns `{"status": "ok"}`, and `GET /v1/auth/me`.
+The API exposes `GET /health`, `GET /v1/auth/me`, and `POST /v1/capsules`.
 Use Python 3.11 and the existing virtual environment at the repository root.
 Run these commands in PowerShell from the repository root:
 
@@ -43,7 +43,7 @@ Check the project's actual signing algorithm and key configuration before using 
 `app/database.py` contains a minimal `DatabaseRepository` for Supabase's PostgreSQL
 Data API. It reuses pinned HTTPX 0.28.1; no dependencies or lockfile changes were
 needed. This is HTTPS/PostgREST access, not a direct PostgreSQL/SQLAlchemy connection.
-The sole operation currently available is `check_connection()`.
+It provides the read-only `check_connection()` and self-capsule RPC call.
 
 Compatibility review (2026-11-12): the current [Python initialization reference](https://supabase.com/docs/reference/python/initializing)
 accepts a project URL and key, and the [Python server example](https://supabase.com/docs/reference/python/admin-api)
@@ -65,8 +65,35 @@ only a deliberately invalid placeholder, and `.env` files are not auto-loaded.
 The repository creates and closes its own HTTP client, accepts no user JWTs or
 incoming request headers, and has no sign-in/session API. It uses TLS validation,
 five-second HTTP operation timeouts, no redirects, no retries and no environment
-proxies. `/health` and `/v1/auth/me` never construct this client. No database route
-or unrestricted query proxy is exposed.
+proxies. `/health` and `/v1/auth/me` never construct this client. No unrestricted
+query proxy is exposed.
+
+### Create a self-capsule
+
+`POST /v1/capsules` requires the same verified Bearer JWT as `/v1/auth/me`.
+Send JSON with exactly `title`, `body`, and `unlock_at`; unknown fields including
+owner, recipient and email are rejected. Text must be nonblank, body is limited
+to 2,000 Unicode characters, and the timestamp must be an ISO 8601 string with
+seconds and `Z` or a numeric `+/-HH:MM` offset. The API converts it to UTC and
+checks it is in the next 90 days using server time. The RPC repeats its checks
+using database time, which is authoritative; close boundary requests can fail
+as time passes or clocks differ. No title maximum exists in the schema.
+
+The verified JWT subject is the sole owner argument sent to the one atomic RPC;
+no user token is forwarded into the privileged client. On success, HTTP 201
+returns only `id`, `title`, `unlock_at`, and `created_at` (timestamps in UTC).
+Invalid input is 422 with a fixed response, missing/invalid authentication is
+401, an ineligible owner reported by the RPC is 403, and unavailable/malformed
+database responses are 503. Errors omit request values and provider details.
+`/health` remains independent of database configuration. An unconfirmed or
+missing Auth user/profile is ineligible under the RPC.
+
+No automatic retry is performed. A timeout can happen after the transaction
+committed, so a caller may not know if a capsule was created; idempotency and
+rate limiting are not implemented and need separate design before beta. This
+endpoint does not return capsule bodies or implement read/reveal/notifications.
+Do not enable HTTP body or credential logging. Existing tests mock the Data API;
+they do not validate a live creation or transactional behavior.
 
 The read-only check sends `HEAD /rest/v1/profiles?select=id&limit=1` with
 `Accept-Profile: public`. It checks access to an existing table even if empty,
@@ -134,3 +161,198 @@ For failures, privately verify the project URL, key type/revocation, Data API/sc
 settings, grants and network availability; do not print the key or raw provider
 response. Record the actual result in STATUS. Live connectivity has not been
 tested as part of this implementation.
+
+## Prompt #009A: atomic self-capsule migration
+
+`POST /v1/capsules` is implemented. Migration 0003 defines the approved
+creation RPC. The user reports migrations 0001-0003 applied to a disposable
+Supabase test project; they have not been applied or executed by this agent.
+The current repository uses
+the Data API, where each request has its own transaction. Two inserts followed
+by a compensating delete cannot guarantee atomicity: the recipient insert or
+cleanup could fail after the capsule commits. See [PostgREST transactions](https://docs.postgrest.org/en/stable/references/transactions.html).
+
+The existing schema requires a nonblank title but specifies no title maximum.
+It permits an empty body, so the new operation must additionally enforce nonblank
+body text and the existing 2,000-character maximum. Unlock time must be greater
+than created time and at most 90 days later. Self-recipients require the owner's
+profile ID, a non-null claim timestamp, and a normalized nonempty intended email;
+invitation hash, expiry and revocation stay null. Profiles do not store email,
+and `current_user` returns only the verified UUID subject.
+
+New migration: `services/api/migrations/0003_create_self_capsule.sql`.
+It leaves 0001 and 0002, all table definitions, table grants and RLS unchanged.
+It adds only a narrowly scoped
+`public.aftertime_create_self_capsule(p_owner_id uuid, p_title text, p_body text,
+p_unlock_at timestamptz)` function and its execution permissions:
+
+1. Use a VOLATILE PL/pgSQL function, SECURITY DEFINER owned by postgres,
+   `search_path = ''`, fully qualified references and UTC timezone. Revoke
+   EXECUTE from PUBLIC, anon and authenticated; grant it only to service_role
+   (apart from the administrative owner). Apply creation and permission changes
+   within the migration transaction. This follows the existing trigger's owner
+   convention but retains a powerful owner; the static function body and narrow
+   execution permission need explicit review. No dynamic SQL or arbitrary table
+   or column arguments. See [Supabase function security](https://supabase.com/docs/guides/database/functions).
+2. FastAPI supplies `p_owner_id` exclusively from `current_user`, never from
+   request JSON. The RPC trusts this backend assertion; the privileged request
+   does not carry the end-user JWT, so `auth.uid()` is not the user's identity.
+   Read the matching `auth.users` row and existing profile; fail closed if absent
+   or if email is missing/unconfirmed. Use `lower(btrim(auth.users.email))` for
+   intended_email, checking `email_confirmed_at`; never accept an email argument
+   or read user-editable metadata. Hold an appropriate row lock while using the
+   Auth row so concurrent updates/deletion cannot invalidate this check mid-write.
+3. Validate nonblank title/body, body length and non-null finite unlock time.
+   Capture database `clock_timestamp()` once after identity checks, enforce
+   `now < unlock_at <= now + interval '90 days'` in UTC, and use that same instant
+   for capsule created_at and recipient claimed_at. API validation must reject
+   naive timestamps before converting to UTC; timestamptz alone cannot detect
+   that the original input omitted an offset.
+4. Insert the capsule with the verified owner and null media, cancellation and
+   deletion fields. Insert exactly one recipient with the new capsule ID,
+   user_id equal to owner_id, normalized email and claimed_at; leave all invite
+   fields and opened_at null. Let any failure abort the whole RPC transaction.
+   Do not catch an error and return success after only one insert. No notifications.
+5. Return an explicit table projection of only capsule ID, title, unlock_at and
+   created_at. Never return a capsule row/composite type, body, email or tokens.
+   Call it with one privileged POST from the repository, with no automatic retry.
+
+Public contract: authenticated `POST /v1/capsules`
+accepts only `title`, `body`, and an offset-aware `unlock_at`; extra properties
+including owner/recipient IDs are rejected. Return 201 with `id`, `title`,
+`unlock_at` and `created_at` in UTC. Validation errors must omit echoed input
+values (including body), and database failures must use fixed safe messages.
+Validation/authentication remain separate from repository HTTP calls.
+
+Isolated database tests and separate application approval are required before enabling writes: prove
+both rows roll back on an injected recipient failure, deny direct anon and
+authenticated RPC execution, verify missing/unconfirmed identity handling, and
+test time boundaries alongside the requested API tests. Mock HTTP tests alone
+cannot prove PostgreSQL rollback. A timeout after commit can still leave the
+caller uncertain whether creation succeeded; atomicity does not give retry
+idempotency. Do not retry automatically or promise duplicate prevention without
+a separately reviewed idempotency design.
+
+### Disposable PostgreSQL verification
+
+No PostgreSQL runtime was available in this session: `psql`, `postgres` and
+`pg_ctl` were absent from PATH, and Docker context inspection failed because its
+configuration was inaccessible. The SQL below is supplied for execution later;
+it has not passed a PostgreSQL parser or runtime test here.
+
+Run from the repository root on a machine with Docker running. These commands
+create a new disposable **plain PostgreSQL** container, with no host ports,
+external network or volumes. Local container connections use trust authentication;
+no credentials or API keys are needed. Do not point these tests at Supabase or any
+existing database. `docker run` deliberately fails if the container name exists.
+The image must be available locally (download `postgres:17` separately if needed).
+
+```powershell
+docker run --pull=never --name aftertime-rpc-test --network none -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=aftertime_rpc_test -d postgres:17
+docker exec aftertime-rpc-test pg_isready -U postgres -d aftertime_rpc_test
+# Wait until pg_isready reports accepting connections before continuing.
+docker cp services/api aftertime-rpc-test:/work
+docker exec aftertime-rpc-test psql -X -v ON_ERROR_STOP=1 -U postgres -d aftertime_rpc_test -f /work/tests/sql/bootstrap.sql
+docker exec aftertime-rpc-test psql -X -v ON_ERROR_STOP=1 -U postgres -d aftertime_rpc_test -f /work/tests/sql/test_create_self_capsule.sql
+# After inspecting results, remove only this disposable container:
+docker rm -f aftertime-rpc-test
+```
+
+Check each command's exit code before proceeding. `bootstrap.sql` requires an
+empty database named `aftertime_rpc_test`, creates minimal test-only Auth columns
+and roles, and applies migrations 0001 through 0003. It is not a replacement for
+Supabase's managed Auth schema. Do not rerun bootstrap in the same database.
+
+`test_create_self_capsule.sql` wraps fixture changes in a transaction and rolls
+them back. It checks a successful call as service_role with a 2,000-character body
+and a near-90-day unlock, exact safe result keys, owner/recipient association,
+email normalization, null invitation/media fields, and no notifications. Negative
+cases include missing/unconfirmed owners, absent profiles/emails, null/empty/blank
+title/body, oversized body, null/infinite/past/present/over-90-day unlock times.
+A temporary trigger proves the capsule insert occurred before forcing the
+recipient insert to fail, then checks both table counts are unchanged. It also
+checks function ownership/settings, effective and explicit EXECUTE ACLs, actual
+anon/authenticated call denials, and retained RLS flags. Expected exceptions are
+caught inside test subtransactions; unexpected outcomes stop the script.
+
+The SQLSTATEs for explicit validation are `22023` (invalid input) and `42501`
+(ineligible owner), with fixed messages and no supplied values. Other database
+errors may contain private PostgreSQL details: the eventual API must sanitize
+them and must not echo validation inputs or log RPC arguments. A timestamptz
+argument represents an instant but cannot identify whether its original input
+was naive; offset requirements remain a future API responsibility. The function
+sets UTC for interval calculation; timestamp display still follows the caller's
+session timezone after it returns.
+
+Before deployment, repeat privilege and transaction checks in a disposable
+Supabase-compatible environment, including Auth row update/deletion contention
+and PostgREST schema-cache visibility. The postgres SECURITY DEFINER owner retains
+broad authority (as in migration 0002); administrative owners/superusers cannot
+be excluded by an EXECUTE revoke. The only ordinary role explicitly granted
+execution is service_role. Review inherited/default grants in the target project.
+
+### Supabase Dashboard SQL Editor verification
+
+For the separate disposable Supabase project with migrations 0001-0003 already
+applied, copy **`services/api/tests/sql/test_create_self_capsule_sql_editor.sql`**
+into the SQL Editor. Do not copy bootstrap.sql or the original psql test script.
+This alternative has been reviewed statically only; it has not been executed here.
+
+Original script compatibility review:
+
+- `bootstrap.sql` uses psql-only `\set` and `\ir`, creates roles that already exist
+  in Supabase, creates a mock `auth` schema/table, and assumes an empty database
+  named `aftertime_rpc_test`. Its included migrations contain BEGIN/COMMIT and
+  would attempt to recreate existing objects. It must never run on Supabase.
+- `test_create_self_capsule.sql` uses psql-only `\set` and `\echo`, the same database
+  name assumption, fixed user UUIDs, and direct writes to the simplified Auth
+  table. Its profile DELETE can cascade through application data if adapted
+  carelessly. It uses global row counts and assumes notifications are empty.
+  Its failure trigger rejects every recipient insert while installed; the DROP
+  statements remove that helper/trigger. BEGIN/ROLLBACK and SET LOCAL ROLE are
+  valid PostgreSQL, but the file is designed to run as one psql session after
+  bootstrap, not as separately selected SQL Editor fragments.
+- Migration 0003 contains valid PostgreSQL SQL and no psql commands. Do not rerun
+  it for this test: it deliberately uses CREATE, and it is already applied.
+
+Preparation and expected results:
+
+1. Confirm the selected project is the **disposable test project**, and use an
+   idle project during the run. The script cannot infer whether a project is
+   production. No SQL database-name check can establish that on hosted Supabase.
+2. Through Supabase Auth/Dashboard, prepare one dedicated, confirmed email test
+   user with its automatically provisioned profile. Do not use a real person's
+   account. The script does not fabricate, modify or delete managed Auth rows.
+   Set `v_owner` and `v_expected_email` at the top to that user's UUID and exact
+   email. These are test identifiers, not credentials; no API key is required.
+3. Select the **postgres** SQL Editor role. Copy and execute the **entire file**
+   as one query. It is one DO statement; there are no psql commands, file includes,
+   role creation, migration application, explicit commits, or DELETE cleanup.
+4. Expect successful completion with no returned rows. If the UI exposes NOTICE
+   messages, the final notice starts `PASS: creation, safe metadata, validation,
+   privileges, atomic rollback and cleanup.` Any ERROR means failure or a blocked
+   prerequisite; do not change grants to make a failing test pass.
+
+The test checks real service_role creation, exactly four safe response fields,
+the self-recipient relationship, scoped notification absence, input/time/owner
+validation, ACLs and actual anon/authenticated denials. All writes are inside a
+PL/pgSQL exception subtransaction: successful tests deliberately raise/catch a
+private cleanup signal to roll back their changes. Unexpected errors abort the
+DO statement. The script verifies that its successful capsule and unique helper
+objects no longer exist before reporting PASS. The pre-existing test Auth user
+and profile are retained; there is no cleanup DELETE against them or other users.
+
+To test second-insert failure, it briefly creates a randomly named, uncommitted
+helper function and a trigger on `public.recipients`, restricted to the dedicated
+test owner's UUID. Both disappear through rollback. No existing function is
+replaced, no table/RLS definition or grants are weakened, and other users' records
+are not targets. Trigger DDL still takes a table lock: the test sets a three-second
+lock timeout and restores it, but can briefly block concurrent writers. Run only
+on the idle disposable project and rerun later if a lock timeout occurs.
+
+Limitations: this checks PostgreSQL behavior, not JWT verification, HTTP error
+sanitization, PostgREST routing/schema-cache behavior, or retry idempotency. It
+does not create missing-email/unconfirmed-user fixtures or mutate managed Auth
+to exercise those branches; the original isolated mock-Auth suite covers them.
+It checks safely separated time cases, not a deterministic exact 90-day boundary.
+No credentials or database connections were accessed to prepare this script.
