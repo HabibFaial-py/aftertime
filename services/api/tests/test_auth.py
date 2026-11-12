@@ -33,7 +33,8 @@ def request(value):
         return client.get("/v1/auth/me", headers={"Authorization": f"Bearer {value}"})
 
 
-def test_valid_token(setup_auth):
+def test_valid_token(setup_auth, monkeypatch):
+    monkeypatch.delenv("SUPABASE_SECRET_KEY", raising=False)
     response = request(token(setup_auth))
     assert response.status_code == 200
     assert response.json() == {"id": USER}

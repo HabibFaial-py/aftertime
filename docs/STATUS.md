@@ -1,10 +1,10 @@
 # AfterTime status
 
-Updated: 2026-11-11
+Updated: 2026-11-12
 
 ## Current phase
 
-Phase 1, mobile-to-FastAPI integration implemented; Android integration acceptance pending. The user reports mobile signup, verification, sign-in, persistence and logout tested on Android, and FastAPI JWT verification tested live. Earlier records are historical.
+Phase 2, Part 1: secure server-side data access implemented and mock-tested; live connectivity intentionally not tested. The user reports Phase 0 and Phase 1 complete, all six Supabase tables and service_role privileges verified, ES256 token verification working, and Android successfully calling `/v1/auth/me`. These live results are user-reported, not independently rechecked in this task. Earlier records are historical.
 
 ## Repository inspection
 
@@ -174,3 +174,20 @@ implement GET /health, and add a basic automated test.
 - From `apps/mobile`, `npm run typecheck` and `npm run lint` passed after fixing the initial nullable-client and effect lint failures. `npx expo install --check` initially failed with EACCES; the network-enabled retry completed but exited 1 because Expo now recommends patch updates: expo 58.0.24, expo-constants 58.0.16, expo-linking 58.0.17, expo-router 58.0.31, expo-secure-store 58.0.3 and expo-status-bar 58.0.5. Existing versions were preserved; no dependencies were added or updated.
 - No live backend request or Android integration test was run in this task. Configure the mobile API URL with the laptop's current LAN IP and port; the README documents setup, HTTPS requirement and manual tests.
 - Next: run the Android connection, failure, retry and logout tests; review Expo patch updates separately.
+
+## Phase 2 — Part 1: secure Supabase data access
+
+- Added lazy, independent database configuration for `SUPABASE_URL` and server-only `SUPABASE_SECRET_KEY`; preserved all authentication variables and the JWT verifier. Added a placeholder to root `.env.example`.
+- Added `app/database.py` with a small repository using existing pinned HTTPX 0.28.1 against the Supabase Data API. Current Python SDK docs support secret keys; the full SDK was not needed or installed. Documentation links and tradeoffs are in `services/api/README.md`. No dependency or lockfile changes.
+- Added local operator command `python -m app.check_database`: bounded HEAD read against `public.profiles`, no row body/count returned, fixed success/failure output and exit codes. No database API endpoint. Private client sends only an apikey secret, never a user JWT; redirects and environment proxies disabled, five-second HTTP operation timeouts, deterministic client cleanup.
+- Added mocked tests for missing/invalid secrets and URLs, success, provider denials/failures, redirects, network failures/timeouts, sanitized errors/logging and independent health/API behavior. Existing authentication success test now explicitly runs without a database secret.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **43 passed, 2 warnings**. Warnings are the existing Starlette HTTPX TestClient deprecation and test-only short HMAC key. From root, `.\.venv\Scripts\python.exe -m pip check`: **No broken requirements found**. `git diff --check` passed with line-ending warnings only.
+- No live Supabase connection, real credentials, schema/migration/RLS edits, mobile/web edits, capsule logic, workers, commits, pushes or deployment. No live connectivity success is claimed.
+- No implementation blocker. Compatibility limits: HTTPS default/443 origins and new `sb_secret_*` keys only; hosted project Data API exposure, effective schema/table grants and key validity remain untested here. Existing TestClient deprecation should be reviewed during a separate dependency update.
+- Next task: after authorization, run the README's masked-input PowerShell connectivity command against development only and record its actual result. Then separately scope the next core API slice with explicit per-user authorization and atomic transaction design.
+
+## Test fixture push-protection cleanup
+
+- Replaced secret-shaped test literals with clearly fake runtime-constructed placeholders while preserving valid and invalid credential cases; application behavior is unchanged.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: 43 passed, 2 existing warnings (Starlette TestClient deprecation and short test HMAC key). From root, `git diff --check`: passed, with line-ending warnings only.
+- No real environment secrets were accessed or changed. No Git history changes or push were performed. Next: review the fix and decide separately how to address the already-existing rejected commit.
