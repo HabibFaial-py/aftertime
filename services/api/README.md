@@ -1,6 +1,7 @@
 # AfterTime API
 
-The API exposes `GET /health`, `GET /v1/auth/me`, and `GET`/`POST /v1/capsules`.
+The API exposes `GET /health`, `GET /v1/auth/me`, `GET`/`POST /v1/capsules`,
+and `GET /v1/capsules/{capsule_id}/reveal`.
 Use Python 3.11 and the existing virtual environment at the repository root.
 Run these commands in PowerShell from the repository root:
 
@@ -43,7 +44,7 @@ Check the project's actual signing algorithm and key configuration before using 
 `app/database.py` contains a minimal `DatabaseRepository` for Supabase's PostgreSQL
 Data API. It reuses pinned HTTPX 0.28.1; no dependencies or lockfile changes were
 needed. This is HTTPS/PostgREST access, not a direct PostgreSQL/SQLAlchemy connection.
-It provides a read-only connectivity check, owner-filtered listing, and self-capsule RPC call.
+It provides a read-only connectivity check, owner-filtered listing, and self-capsule creation and reveal RPC calls.
 
 Compatibility review (2026-11-12): the current [Python initialization reference](https://supabase.com/docs/reference/python/initializing)
 accepts a project URL and key, and the [Python server example](https://supabase.com/docs/reference/python/admin-api)
@@ -382,3 +383,147 @@ does not create missing-email/unconfirmed-user fixtures or mutate managed Auth
 to exercise those branches; the original isolated mock-Auth suite covers them.
 It checks safely separated time cases, not a deterministic exact 90-day boundary.
 No credentials or database connections were accessed to prepare this script.
+
+### Reveal a self-capsule
+
+`GET /v1/capsules/{capsule_id}/reveal` requires the existing verified Bearer JWT
+and a UUID path. It accepts no query parameters. On success it returns exactly
+`{"id": "<uuid>", "body": "<text>"}`. The repository makes one privileged POST
+to migration 0004's RPC with the verified subject and capsule ID; the user JWT
+is not forwarded, and no capsule table/body query or API-clock unlock decision
+is made. The RPC checks owner, self-recipient, cancellation, deletion and database
+time. No automatic retry is performed.
+
+Missing/invalid authentication returns 401; malformed IDs and query parameters
+return fixed 422 errors. Locked, missing, cross-user, cancelled, deleted and
+non-self capsules all return `404 {"detail":"Capsule unavailable"}`. Database
+configuration, network or malformed/unexpected RPC responses return a fixed 503.
+All reveal responses, including errors, carry `Cache-Control: no-store` and
+`Pragma: no-cache`. Never log request authorization, response bodies, RPC
+payloads or provider errors; configure reverse proxies and monitoring accordingly.
+
+The user reports migration 0004 was tested in a disposable project and applied to
+development. Mock tests here do not verify the live RPC, locking or effective
+database privileges. The verified backend subject is trusted by the server-role
+RPC; a leaked privileged key or other privileged code can bypass this boundary.
+The JWT verifier does not immediately detect revoked sessions. Race behavior,
+live before/at/after unlock checks, cache behavior through intermediaries and
+rate limiting still require verification before broader use.
+
+## Prompt #011B: self-capsule reveal RPC
+
+Migration `0004_reveal_self_capsule.sql` adds
+`public.aftertime_reveal_self_capsule(p_capsule_id uuid, p_requester_id uuid)`.
+It returns zero rows for missing, cross-owner, locked, cancelled, deleted, or
+non-self capsules, and exactly `id, body` for an eligible self capsule. It does
+not expose title, media, email, recipient or invitation fields. This is a
+database function. The user reports 0004 tested in a disposable Supabase project
+and applied to development; these live results were not independently verified here.
+
+The backend must derive `p_requester_id` from the verified JWT, never client
+input, and pass it over the separate service-role client without forwarding a
+user JWT. The function trusts that assertion. PostgreSQL verifies matching owner
+and a bound, claimed recipient with null invitation hash/expiry/revocation. A
+hashless claimed row is not independently proof of self-creation: privileged
+writers must preserve this invariant. The first query locks only capsule metadata
+with `FOR SHARE`; the second locks the matching recipient. It captures
+`clock_timestamp()` **after** lock acquisition and reads body only after all
+checks, permitting equality at the unlock instant. Both locks survive until the
+transaction ends. New cancellation, deletion and recipient writers must lock in
+the same order: capsule, then recipient. Under READ COMMITTED a locking read that
+waits on a concurrent update re-evaluates the row; stronger isolation may instead
+raise a serialization failure. Either must fail closed. These guarantees end when
+the transaction commits; a subsequent deletion cannot recall content already sent.
+
+The function is VOLATILE, SECURITY DEFINER, owned by postgres with an empty
+search_path; PUBLIC, anon and authenticated lose EXECUTE and service_role gets
+EXECUTE. As in 0003, the postgres owner is broad and can bypass RLS. Existing
+service_role table grants also permit privileged direct reads; this function
+cannot contain a compromised key or another backend code path. Never pass user
+tokens into the privileged client, expose the key, log bodies/arguments/provider
+errors, or cache reveal results. The future FastAPI endpoint should validate
+UUIDs, map all no-row denials to the same 404, sanitize database/UUID errors,
+and use `Cache-Control: no-store`. A malformed SQL UUID cast can itself produce
+an error; HTTP validation and sanitization remain the future API's responsibility.
+
+The row locks require a read-write PostgreSQL transaction. The future public
+endpoint is GET and calls this VOLATILE RPC with a backend **POST** to
+PostgREST: a GET RPC runs in a read-only transaction. Do not forward a client
+authorization header. See [PostgREST transactions](https://docs.postgrest.org/en/stable/references/transactions.html)
+and [PostgreSQL row locks](https://www.postgresql.org/docs/current/explicit-locking.html).
+
+### Disposable Supabase SQL Editor test
+
+Only after review, in the separate **idle disposable SQL-test project**, apply
+0004 as postgres once; do not run it against the development or production
+project as part of these tests. Then copy the entire file
+`services/api/tests/sql/test_reveal_self_capsule_sql_editor.sql` into the SQL
+Editor. Select postgres and replace `v_owner` and `v_other` with UUIDs of two
+distinct dedicated test users with provisioned profiles. The script cannot detect
+whether a project is disposable. It creates synthetic capsule and recipient
+fixtures inside a rollback-only subtransaction; it never changes Auth users and
+no fixture is committed. Expected: success/no rows, and a PASS notice if the UI
+shows notices. Any error is a failure. Do not paste only a selection of the DO
+block. The test obtains row locks; the project should have no concurrent traffic.
+
+The script checks permitted response and exact output keys, wrong owner, locked,
+cancelled, deleted, missing capsule/recipient, unbound historical claim,
+invitation-backed recipient, null arguments, and at-or-after unlock. It checks
+effective EXECUTE grants, ownership/security settings, all six RLS flags,
+direct client body SELECT denial and actual anon/authenticated RPC denials.
+Fixtures are rolled back even on success. It sets an unlock to the current clock
+and then calls immediately: this demonstrates at-or-after, not exact-microsecond
+equality. Its cases do not prove live PostgREST transport or concurrency.
+
+### Required two-session concurrency checks
+
+In that same isolated test project, prepare an eligible self-capsule fixture
+owned by a dedicated test account; use **only that disposable fixture**. Replace
+`<CAPSULE_UUID>` and `<OWNER_UUID>` below with its IDs. Use two independent
+trusted SQL sessions (for example two separate `psql` connections, not two
+requests whose session affinity is unknown). Use synthetic body text only. The
+fixture must already be committed and unlocked, with no cancellation/deletion.
+Do not print or save the function result. These tests need real concurrent
+connections; a single SQL Editor DO block does not provide that guarantee.
+
+1. In session A, run the following and keep the transaction open:
+
+   ```sql
+   BEGIN;
+   SET LOCAL ROLE service_role;
+   SELECT count(*) FROM public.aftertime_reveal_self_capsule('<CAPSULE_UUID>'::uuid, '<OWNER_UUID>'::uuid);
+   -- Expect 1; keep the transaction open so its row locks remain held.
+   ```
+
+   While A is open, in session B run:
+
+   ```sql
+   BEGIN;
+   SET LOCAL lock_timeout = '2s';
+   UPDATE public.capsules SET deleted_at = clock_timestamp() WHERE id = '<CAPSULE_UUID>'::uuid;
+   -- Expect lock timeout; ROLLBACK the failed transaction.
+   ROLLBACK;
+   ```
+
+   Afterward issue `ROLLBACK` in A. Repeat with a recipient update/delete to
+   verify its row lock, then repeat with cancellation using a still-locked
+   fixture and a timestamp satisfying 0001's constraints. For that locked
+   fixture the RPC returns zero rows but still holds both locks until A ends.
+   Never commit those updates. A failed transaction must be rolled back before reuse.
+
+2. Reverse the order with an eligible, synthetic fixture: in session B start a
+   transaction and update its `deleted_at`; keep B open. In A begin, set the
+   same two-second local lock timeout and call the RPC as service_role. Expect a
+   timeout and no result/body. Roll back A and B. Repeat with a recipient
+   unbinding and a still-locked cancellation fixture. For a writer-commits-first
+   check, commit only the synthetic fixture's deletion in B in the disposable
+   project, then call the RPC in A and expect zero rows; remove the synthetic
+   fixture later using that environment's approved cleanup procedure. Test
+   concurrent unlock-time updates as well. Under stronger isolation, record a
+   serialization failure as a fail-closed outcome, not as a successful reveal.
+
+These scripts were not executed in this task. SQL errors, timeouts, exact
+microsecond boundary behavior, live PostgREST role/transport, effective inherited
+grants, SQL statement logging, and concurrent races require real isolated
+verification before implementation or deployment of reveal. The previous
+creation and listing API tests do not prove these properties.

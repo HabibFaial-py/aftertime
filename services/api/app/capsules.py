@@ -3,7 +3,7 @@ import re
 from uuid import UUID
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 
 class CreateCapsule(BaseModel):
@@ -66,3 +66,10 @@ class CapsuleMetadata(BaseModel):
 
 class CapsuleListItem(CapsuleMetadata):
     status: Literal["locked", "unlocked"]
+
+
+class CapsuleReveal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    body: StrictStr = Field(repr=False, max_length=2000)

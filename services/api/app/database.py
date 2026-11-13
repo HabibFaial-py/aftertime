@@ -8,7 +8,8 @@ import httpx
 from pydantic import ValidationError
 
 from app.config import get_database_settings
-from app.capsules import CapsuleMetadata, CreateCapsule
+from app.capsules import CapsuleMetadata, CapsuleReveal, CreateCapsule
+from uuid import UUID
 
 
 class DatabaseUnavailableError(RuntimeError):
@@ -27,6 +28,31 @@ class DatabaseOwnerError(Exception):
 class DatabaseRepository:
     def __init__(self) -> None:
         self._settings = get_database_settings()
+
+    def reveal_self_capsule(self, capsule_id: UUID, requester_id: str) -> CapsuleReveal | None:
+        """The RPC, not the API clock or a separate table read, decides eligibility."""
+        try:
+            with httpx.Client(
+                base_url=f"{self._settings.supabase_url}/rest/v1/",
+                headers={"apikey": self._settings.secret_key, "Content-Profile": "public"},
+                timeout=5.0, follow_redirects=False, trust_env=False,
+            ) as client:
+                response = client.post("rpc/aftertime_reveal_self_capsule", json={
+                    "p_capsule_id": str(capsule_id), "p_requester_id": requester_id,
+                })
+                if response.status_code != 200:
+                    raise DatabaseUnavailableError()
+                rows = response.json()
+                if not isinstance(rows, list) or len(rows) > 1:
+                    raise DatabaseUnavailableError()
+                if not rows:
+                    return None
+                reveal = CapsuleReveal.model_validate(rows[0])
+                if reveal.id != capsule_id:
+                    raise DatabaseUnavailableError()
+                return reveal
+        except (httpx.HTTPError, ValueError, ValidationError):
+            raise DatabaseUnavailableError() from None
 
     def create_self_capsule(self, owner_id: str, capsule: CreateCapsule) -> CapsuleMetadata:
         try:

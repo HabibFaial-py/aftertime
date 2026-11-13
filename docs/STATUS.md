@@ -4,7 +4,7 @@ Updated: 2026-11-12
 
 ## Current phase
 
-Phase 2, Prompt #010: authenticated owner-only capsule listing implemented and mock-tested. The user reports live self-capsule creation verified and prior work pushed to main; these live results were not independently rechecked here. Earlier records are historical.
+Phase 2, Prompt #011C: authenticated self-capsule reveal endpoint implemented and mock-tested. The user reports migration 0004 tested in a disposable project and applied to development; neither result was independently checked here. Migration 0004 was already uncommitted at task start. Earlier records are historical.
 
 ## Repository inspection
 
@@ -255,3 +255,46 @@ implement GET /health, and add a basic automated test.
 
 - Prepared `.venv/aftertime_test_isolation.py` for the designated development project and User B. It compares User B's verified `/v1/auth/me` identity to a separately supplied User A owner UUID, then requests the first capsule page and checks its metadata and User A capsule UUID. Empty results pass this specific check; a nonempty page without User A's capsule is inconclusive because listing responses contain no owner IDs.
 - Static verification only: AST parsing and Git ignore checks. No integration script run, credentials accessed, or live requests made. No application code, migration or backend test changes. Next: manually run the script with confirmed development account/project and known IDs, then record the actual result; independently verify nonempty results and broader isolation in a disposable environment.
+
+## Phase 2 — Prompt #011B: reveal RPC migration
+
+- Added `services/api/migrations/0004_reveal_self_capsule.sql`: `public.aftertime_reveal_self_capsule(p_capsule_id uuid, p_requester_id uuid)` returns only `id, body` after checking verified-backend-supplied owner, noncancelled/nondeleted capsule and claimed self-recipient with null invitation fields. Denials return no rows. A `FOR SHARE` capsule lock precedes a recipient lock; database `clock_timestamp()` is captured afterward, and body is selected only when `unlock_at <=` that time. VOLATILE SECURITY DEFINER, empty search_path, postgres owner, service_role EXECUTE, explicit PUBLIC/anon/authenticated revoke. No changes to 0001–0003, tables, RLS or grants.
+- Added `services/api/tests/sql/test_reveal_self_capsule_sql_editor.sql`: disposable-project-only single DO block with synthetic fixtures and rollback, two existing test profile UUID placeholders, owner and cross-owner, locked/cancelled/deleted/missing/invitation/unbound cases, null and invalid UUIDs, safe projection, actual client-role denials and RLS/ACL inspection. The at-or-after check cannot force exact microsecond equality. README documents exact execution prerequisites and two-session race procedures; SQL and races have not been run.
+- No `psql`, `postgres`, or `pg_ctl` on PATH; Python environment has neither pglast nor sqlparse. No local PostgreSQL runtime or parser verified. No credentials, live database, SQL execution, migration application, new dependencies, endpoint, commit, push or deployment. User's disposable Supabase project was not accessed.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **90 passed, 2 existing warnings** (Starlette TestClient deprecation and test-only short HMAC key). These are existing Python regressions, not SQL tests. `git diff --check` passed with line-ending warnings; migrations 0001–0003 had no diff.
+- Blockers before use: run SQL Editor tests and two-session concurrency scenarios in the disposable project, verify role inheritance/ACLs and PostgREST POST transaction behavior, review postgres SECURITY DEFINER exposure and backend-only identity trust, and test exact time boundary. The future API must sanitize invalid UUID and database errors, prohibit caching and independently verify JWT. Reveal-before-delete may complete even if deletion follows its committed transaction; returned bytes cannot be recalled.
+- Next: review and authorize isolated application/test of 0004 only; record actual results before separately scoping the FastAPI reveal endpoint.
+
+## Phase 2 — Prompt #011C: FastAPI self-capsule reveal
+
+- Added `GET /v1/capsules/{capsule_id}/reveal`, using the existing verified JWT subject, UUID validation, no query parameters, and a single POST to the privileged 0004 RPC. No direct body query or application-clock authorization. Empty RPC results for locked, cross-user, cancelled, deleted, missing or non-self capsules map to one generic 404.
+- Added strict id/body-only response validation, matching requested UUID, sanitized 422/503 errors, no retries and no-store/no-cache response headers including authentication, validation, method and unexpected-error paths. No application logging of bodies, tokens or provider responses. Secret role remains separate from user JWTs.
+- Mock tests cover ES256 authentication, correct RPC arguments, query/header identity overrides, denials, response shape and UUID mismatches, bad JSON/HTTP/network/JWKS/configuration failures, unexpected exceptions, safe response/log contents and cache headers. From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **114 passed, 2 existing warnings** (Starlette HTTPX TestClient deprecation and test-only short HMAC key). No real credentials or live DB used.
+- No migration, mobile/web, dependency, commit, push or deployment changes; pre-existing uncommitted 0004 and SQL test artifacts preserved. SQL test outcome, concurrency and live application reported by the user are not independently verified in this task.
+- `git diff --check` passed with line-ending warnings only.
+- Next: separately review and test the full endpoint using disposable accounts and database fixtures, including before/at/after unlock, concurrency, direct-access grants and intermediary cache/log configuration. Rate limiting and immediate JWT revocation checks remain future work.
+
+## Phase 2 — Prompt #011D: locked reveal integration script
+
+- Prepared `.venv/aftertime_test_locked_reveal.py`, a gitignored one-shot script using masked credentials/UUID, owner-visible metadata and at most one reveal GET. It requires a fixed generic 404 and no-store header for PASS; an already-unlocked capsule, missing first-page metadata or a 200 reveal is INCONCLUSIVE. It never prints records or credentials and does not read a successful reveal body.
+- Static verification only: Python AST parse and Git-ignore check. The script was not run and no live authentication, credentials, API request, database change or migration operation was performed. No application code, migrations, commit, push or deployment changes.
+- Next: after confirming the development project and owner account, manually run once while the test capsule is still locked. The metadata/API and client clocks are not authoritative for reveal; the RPC database clock decides eligibility. A 404 is generic and does not independently prove denial was due to time.
+
+## Phase 2 — Prompt #011E: cross-account reveal test script
+
+- Prepared gitignored `.venv/aftertime_test_cross_reveal.py` using masked User B credentials and User A owner/capsule UUID prompts. It checks the verified User B subject via `/v1/auth/me`, then makes one reveal GET and requires the exact generic 404 and no-store header. No record creation or modification, retries, or response/credential output.
+- Static verification only: AST parsing and Git-ignore check. No integration script execution, live requests, credentials, database changes, application/migration/test changes, commit, push or deployment. User reports an owner locked-capsule denial; this was not independently verified here.
+- Next: manually run the script after confirming the original development project and identities; a generic 404 on a locked/missing capsule cannot independently prove the owner check. Verify cross-account denial for an independently confirmed unlocked test capsule in an isolated environment.
+
+## Phase 2 — Prompt #011G: isolated unlocked-reveal infrastructure
+
+- Prepared four gitignored `.venv` files: `aftertime_isolated_server.ps1`, `aftertime_isolated_fixture_create.sql`, `aftertime_isolated_fixture_cleanup.sql`, and `aftertime_test_isolated_reveal.py`. The server derives URL/issuer from the isolated project reference and accepts both keys through masked prompts; the operator must confirm their provenance because opaque keys do not encode a verifiable project reference. No development `.env` changes.
+- SQL creates one uniquely marked synthetic historical fixture with a self-recipient; cleanup matches owner, fixture UUID, marker and body, locks both rows, and refuses unexpected recipients, notifications or reports. Neither script creates/deletes Auth users or profiles. SQL Editor user must independently confirm the isolated project before either operation.
+- The client authenticates two isolated users with masked prompts, verifies both identities through the separate API on port 8002, and checks one authorized synthetic-body reveal and one generic cross-user denial with no-store. It prints only PASS/FAIL and has no retries.
+- Syntax and ignore checks only; no SQL execution, server startup, network requests or credentials. No application/migration changes, commits, pushes or deployment. SQL compatibility, live key provenance, isolation, security behavior and cleanup remain unverified until a separately authorized test.
+
+## Isolated launcher paste support
+
+- Updated gitignored `.venv/aftertime_isolated_server.ps1` to use two masked Windows Forms text boxes that accept paste. Project reference and ISOLATED confirmation remain; URL/issuer/audience and loopback port are unchanged. Configuration is placed only in the spawned server process, with dialog fields, local key references and process-start configuration cleared on normal/error cleanup.
+- PowerShell parser and isolated key-prefix function checks with dummy strings passed; `git check-ignore` confirmed the launcher remains ignored, and `git diff --check` passed with line-ending warnings. The GUI and FastAPI server were not started; no real keys or network were used. Windows Forms/PowerShell managed strings cannot guarantee immediate in-memory erasure; clipboard content remains under user control.
+- Next: manually use the isolated launcher and verify paste and project/key provenance during the separately authorized test.
