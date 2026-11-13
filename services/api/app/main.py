@@ -1,10 +1,11 @@
-from fastapi import Depends, FastAPI, HTTPException, Request
+from datetime import datetime, timezone
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.exception_handlers import request_validation_exception_handler
 
 from app.auth import current_user
-from app.capsules import CapsuleMetadata, CreateCapsule
+from app.capsules import CapsuleListItem, CapsuleMetadata, CreateCapsule
 from app.config import DatabaseConfigurationError
 from app.database import DatabaseInputError, DatabaseOwnerError, DatabaseRepository, DatabaseUnavailableError
 
@@ -38,3 +39,18 @@ def create_capsule(capsule: CreateCapsule, user_id: str = Depends(current_user))
         raise HTTPException(status_code=403, detail="Unable to create capsule") from None
     except (DatabaseConfigurationError, DatabaseUnavailableError):
         raise HTTPException(status_code=503, detail="Capsule service unavailable") from None
+
+
+@app.get("/v1/capsules", response_model=list[CapsuleListItem])
+def list_capsules(
+    limit: int = Query(default=50, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=10000),
+    user_id: str = Depends(current_user),
+) -> list[CapsuleListItem]:
+    try:
+        rows = DatabaseRepository().list_owned_capsules(user_id, limit, offset)
+    except (DatabaseConfigurationError, DatabaseUnavailableError):
+        raise HTTPException(status_code=503, detail="Capsule service unavailable") from None
+    now = datetime.now(timezone.utc)
+    return [CapsuleListItem(**row.model_dump(), status="unlocked" if row.unlock_at <= now else "locked")
+            for row in rows]

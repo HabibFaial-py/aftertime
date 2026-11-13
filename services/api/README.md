@@ -1,6 +1,6 @@
 # AfterTime API
 
-The API exposes `GET /health`, `GET /v1/auth/me`, and `POST /v1/capsules`.
+The API exposes `GET /health`, `GET /v1/auth/me`, and `GET`/`POST /v1/capsules`.
 Use Python 3.11 and the existing virtual environment at the repository root.
 Run these commands in PowerShell from the repository root:
 
@@ -43,7 +43,7 @@ Check the project's actual signing algorithm and key configuration before using 
 `app/database.py` contains a minimal `DatabaseRepository` for Supabase's PostgreSQL
 Data API. It reuses pinned HTTPX 0.28.1; no dependencies or lockfile changes were
 needed. This is HTTPS/PostgREST access, not a direct PostgreSQL/SQLAlchemy connection.
-It provides the read-only `check_connection()` and self-capsule RPC call.
+It provides a read-only connectivity check, owner-filtered listing, and self-capsule RPC call.
 
 Compatibility review (2026-11-12): the current [Python initialization reference](https://supabase.com/docs/reference/python/initializing)
 accepts a project URL and key, and the [Python server example](https://supabase.com/docs/reference/python/admin-api)
@@ -161,6 +161,32 @@ For failures, privately verify the project URL, key type/revocation, Data API/sc
 settings, grants and network availability; do not print the key or raw provider
 response. Record the actual result in STATUS. Live connectivity has not been
 tested as part of this implementation.
+
+### List owned capsules
+
+`GET /v1/capsules` requires a verified Bearer JWT and returns a JSON array. Each
+item has exactly `id`, `title`, `created_at`, `unlock_at`, and `status`. UTC
+timestamps use ISO 8601. Status is `locked` before `unlock_at` and `unlocked`
+at or after it, calculated once per request using the API server clock. An
+unlocked status does not itself authorize content access.
+
+The privileged repository filters by the verified JWT subject (`owner_id`),
+requires `deleted_at` and `cancelled_at` to be null, and selects only
+`id,title,created_at,unlock_at`. Cancellation is not an API operation yet;
+cancelled rows are omitted so they cannot be mislabeled as unlocked. The query
+does not fetch body, media, email, invitation or token data. No client-supplied
+owner parameter is used, and no user JWT is forwarded to the privileged client.
+RLS and grants are unchanged. Provider failures return a fixed 503.
+
+Optional query parameters: `limit` (1–50, default 50) and `offset` (0–10000,
+default 0). Ordering is `created_at` descending, then `id` descending. An empty
+page returns `[]`; a full page does not guarantee a next page. Offset pagination
+is not a snapshot: inserts/deletes between requests can shift items, and offsets
+past 10000 are rejected. Malformed parameters return 422. Client clocks never
+determine status, but the API host clock must be maintained accurately. Future
+reveal must independently enforce server time, authorization, cancellation and
+deletion. Mock tests verify the query and filtering behavior; they do not prove
+live PostgREST or cross-account security. See [PostgREST filtering and ordering](https://docs.postgrest.org/en/stable/references/api/tables_views.html).
 
 ## Prompt #009A: atomic self-capsule migration
 

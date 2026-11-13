@@ -56,6 +56,31 @@ class DatabaseRepository:
         except (httpx.HTTPError, ValueError, ValidationError):
             raise DatabaseUnavailableError() from None
 
+    def list_owned_capsules(self, owner_id: str, limit: int, offset: int) -> list[CapsuleMetadata]:
+        """Select only safe fields, with ownership enforced by PostgreSQL."""
+        try:
+            with httpx.Client(
+                base_url=f"{self._settings.supabase_url}/rest/v1/",
+                headers={"apikey": self._settings.secret_key, "Accept-Profile": "public"},
+                timeout=5.0, follow_redirects=False, trust_env=False,
+            ) as client:
+                response = client.get("capsules", params={
+                    "select": "id,title,created_at,unlock_at",
+                    "owner_id": f"eq.{owner_id}",
+                    "deleted_at": "is.null",
+                    "cancelled_at": "is.null",
+                    "order": "created_at.desc,id.desc",
+                    "limit": str(limit), "offset": str(offset),
+                })
+                if response.status_code not in (200, 206):
+                    raise DatabaseUnavailableError()
+                rows = response.json()
+                if not isinstance(rows, list) or len(rows) > limit:
+                    raise DatabaseUnavailableError()
+                return [CapsuleMetadata.model_validate(row) for row in rows]
+        except (httpx.HTTPError, ValueError, ValidationError):
+            raise DatabaseUnavailableError() from None
+
     def check_connection(self) -> None:
         """Exercise SELECT permission on public.profiles without fetching rows."""
         try:

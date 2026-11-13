@@ -4,7 +4,7 @@ Updated: 2026-11-12
 
 ## Current phase
 
-Phase 2, Prompt #009B: self-capsule creation API implemented and mock-tested. The user reports migration 0003 tested in a disposable Supabase project and applied to the main development database; neither was independently rechecked here. Earlier records are historical.
+Phase 2, Prompt #010: authenticated owner-only capsule listing implemented and mock-tested. The user reports live self-capsule creation verified and prior work pushed to main; these live results were not independently rechecked here. Earlier records are historical.
 
 ## Repository inspection
 
@@ -235,3 +235,23 @@ implement GET /health, and add a basic automated test.
 - Prepared `.venv/aftertime_test_capsule.py` in the existing gitignored virtualenv directory. It authenticates a designated development test account using environment variables or prompts, then makes at most one local creation request, checking the four safe response fields. No secrets, JWTs or response bodies are printed; failures after the POST report an uncertain outcome and prohibit blind retries.
 - Confirmed `git check-ignore -v .venv/aftertime_test_capsule.py` matches `.gitignore:2`; `git ls-files -- .venv/aftertime_test_capsule.py` returned no tracked entry. Parsed the script with Python `ast.parse`: `Syntax OK`. No script execution, live requests or credentials were used. No application or migration changes.
 - Next: the user can run the script once after confirming the development project and designated account; record the actual outcome, and inspect the database before considering another attempt if the result is uncertain.
+
+## Phase 2 — Prompt #010: authenticated capsule listing
+
+- Added `GET /v1/capsules` using the existing JWT verifier and privileged repository. The database query filters by the verified owner UUID, excludes deleted and cancelled rows, and selects only ID, title, creation and unlock timestamps. Results add locked/unlocked status using one API server clock reading. Cancelled rows are excluded to avoid reporting them as unlocked; no cancellation feature was implemented.
+- Added bounded limit (1–50, default 50) and offset (0–10000, default 0), with deterministic created_at DESC/id DESC ordering. Offset pagination is not a stable snapshot under concurrent writes; no total count is returned.
+- Mocked tests cover authentication, cross-user/deleted/cancelled filtering, private-field projection, empty pages, pagination/ties, before/at/after unlock status, malformed database responses and sanitized failures. Mock database filtering proves the request shape and response handling, not actual database/RLS enforcement. No real credentials or live database used.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **90 passed, 2 existing warnings** (Starlette HTTPX TestClient deprecation and test-only short HMAC key). No schema, migration, mobile/web, dependency, commit, push or deployment changes.
+- From the repository root, `git diff --check` passed with line-ending warnings only.
+- Next: with separate authorization, verify the owner filters and pagination against a disposable Supabase project with distinct test users. Independently design reveal authorization and authoritative time checks; listing status does not grant content access. Review pagination snapshot behavior and rate limits before beta.
+
+## Phase 2 — Prompt #010A: listing integration script
+
+- Prepared `.venv/aftertime_test_listing.py` under the existing gitignored directory. It signs in to the designated development test account, makes one GET request to the local listing API, validates the five-field schema and searches the first page for the earlier integration-test title. It prints only PASS/FAIL, the count and whether the expected title was found; credentials and returned records are not printed.
+- Static verification only: Python AST parsing and Git ignore checks. The script was not run; no credentials, live authentication or database were accessed. No application, migrations, mobile/web, commit, push or deployment changes.
+- Next: run the script manually against the confirmed development project/account, record its actual result, and separately validate cross-account isolation and pagination in a disposable environment.
+
+## Phase 2 — Prompt #010B: cross-account isolation script
+
+- Prepared `.venv/aftertime_test_isolation.py` for the designated development project and User B. It compares User B's verified `/v1/auth/me` identity to a separately supplied User A owner UUID, then requests the first capsule page and checks its metadata and User A capsule UUID. Empty results pass this specific check; a nonempty page without User A's capsule is inconclusive because listing responses contain no owner IDs.
+- Static verification only: AST parsing and Git ignore checks. No integration script run, credentials accessed, or live requests made. No application code, migration or backend test changes. Next: manually run the script with confirmed development account/project and known IDs, then record the actual result; independently verify nonempty results and broader isolation in a disposable environment.

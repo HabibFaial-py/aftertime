@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import re
 from uuid import UUID
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, StrictStr, field_validator
 
@@ -61,3 +62,7 @@ class CapsuleMetadata(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Invalid timestamp")
         return value.astimezone(timezone.utc)
+
+
+class CapsuleListItem(CapsuleMetadata):
+    status: Literal["locked", "unlocked"]
