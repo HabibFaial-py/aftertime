@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { authError, supabase } from '../lib/supabase';
 import { Action, Screen, styles } from '../components/ui';
 import { ApiError, getAuthenticatedUser } from '../lib/api';
+import { router } from 'expo-router';
 
 export default function Home() {
   const { session } = useAuth();
@@ -52,6 +53,7 @@ export default function Home() {
     <Text accessibilityLiveRegion="polite" style={styles.text}>Backend authentication: {backend === 'checking' ? 'Checking...' : backend === 'connected' ? 'Connected' : 'Failed'}</Text>
     {backend === 'failed' && <><Text style={styles.error}>{backendMessage}</Text><Action title="Retry connection" onPress={() => { setBackend('checking'); setRetryCount((n) => n + 1); }} /></>}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <Action title="View capsules" onPress={() => router.push('/capsules')} />
     <Action title={busy ? 'Signing out…' : 'Log out'} disabled={busy} onPress={() => void logout()} />
   </Screen>;
 }

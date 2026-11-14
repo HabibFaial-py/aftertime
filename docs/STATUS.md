@@ -1,5 +1,63 @@
 # AfterTime status
 
+## Phase 3 — mobile integration commit preparation
+
+- Core mobile API integration, list, text-only creation, secure reveal and cancellation are implemented. The latest local verification passed typecheck, lint and **27 mocked mobile tests**. The user reports the core flow works smoothly on a physical Android phone; individual Android edge cases have not been independently verified here.
+- Outstanding checks include early-reveal denial, logout/account switching, app-switcher privacy, interrupted cancellation, timezone/DST, accessibility and release-build transport. UI/UX redesign remains pending. Beta and release readiness have not been established. See `docs/PHASE_3_FINAL_REVIEW.md` for the detailed checklist and limitations.
+
+## Phase 3 — Prompt #013G-3: final mobile integration review
+
+- Reviewed the mobile API, auth/navigation, list, creation, reveal, cancellation, tests and candidate documentation. User reports core functionality works smoothly on a physical Android phone; individual scenarios were not independently rerun here. No critical code defect was confirmed, and no application behavior was changed. The current mobile integration slice is ready for a Git commit; this is not a beta/release readiness claim.
+- From `apps/mobile`, `npm run typecheck`, `npm run lint` and `npm test` passed; **27 mocked tests passed**. `git diff --check` passed with LF-to-CRLF warnings; a separate scan of then-untracked files found no whitespace issues. A targeted candidate-file secret-pattern scan found no matches; `.env` and temporary `.venv` launchers remain ignored. No live services were contacted.
+- `docs/PHASE_3_FINAL_REVIEW.md` lists the commit candidates, missing historical documentation, security/lifecycle limitations and prioritized Android checks. Next: confirm the privacy, account-switch and cancellation interruption cases on Android and separately authorize any commit.
+
+## Phase 3 — Prompt #013G-2B: development Android server launcher
+
+- Prepared `.venv/aftertime_dev_android_server.ps1` to read the five backend settings from root `.env` as data, reject the isolated project, compare development URL and publishable key with the mobile `.env`, check the LAN address and TCP port, and require explicit development-project and startup confirmation. It binds only `192.168.18.155:8002`, passes settings to the child process and disables access logging; no existing process is automatically stopped.
+- Read-only checks without displaying values found the root URL was not the isolated project, the URL and public key matched mobile configuration, and URL/issuer/audience/key formats passed. PowerShell parser, dummy project-reference matching and Git-ignore checks passed; the new file is untracked and ignored. The launcher, port check and server were not executed, and no services or records were contacted or changed.
+- Next: independently confirm the original development project and use disposable test accounts before manually launching. Matching keys by format cannot prove server-key provenance. The assigned address, port and firewall must be checked at launch; local HTTP exposes bearer tokens on the network.
+
+## Phase 3 — Prompt #013G-2A: isolated Android server launcher
+
+- Prepared `.venv/aftertime_isolated_android_server.ps1`, pinned to isolated project `wokkxbgbrsmydozvyvkt` and LAN address `192.168.18.155:8002`, with explicit confirmation, masked paste-friendly key entry and TCP occupancy checks before and after the dialog. Key type checks cannot establish project provenance; the operator must verify it. Keys are passed to the child process only and not persisted by the script.
+- PowerShell `Parser.ParseFile` reported no syntax errors. `git check-ignore -v .venv/aftertime_isolated_android_server.ps1` matched `.gitignore:2`; `git ls-files --` returned no tracked entry. The script, port checks and GUI were not executed, and no server or live service was contacted. Next: separately run the launcher on a trusted network with verified isolated keys and disposable accounts; confirm the LAN IP and firewall policy. HTTP does not encrypt bearer tokens.
+
+## Phase 3 — Prompt #013G-1: Android test preparation
+
+- Prepared `docs/ANDROID_TEST_PLAN_013G.md` with isolated emulator and physical-device setup, safe synthetic fixtures, ordered manual checks and cleanup constraints. Current source uses Expo Go; a development build is not configured. `adb` and `emulator` were not found on PATH; Node, npm, Python, mobile dependencies and the existing virtualenv were present. Several prior audit documents are absent in the current workspace, as recorded in the plan.
+- Read-only local inspection only; no servers, Android emulator, live services, migrations or dependencies were started or changed. No Android test has been run. Next: review the plan and run it separately against confirmed disposable accounts and project when ready.
+- `git diff --check` passed with LF-to-CRLF warnings; it excludes the untracked test plan.
+
+## Phase 3 — Prompt #013F: mobile cancellation
+
+- Added a confirmed, accessible cancellation action to the protected capsule detail. The controller prevents duplicate requests, clears revealed text and metadata on success, and returns to a fresh list. Uncertain failures prevent further detail actions and ask the user to refresh before trying again; focus/session/route disposal aborts and invalidates pending work.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed; `npm test` passed 27 mocked tests. No live services were contacted. See `docs/MOBILE_CAPSULE_CANCEL_013F.md` for uncertain-outcome and Android verification limitations. Next: validate the full mobile flow with disposable fixtures and hardware/session interruption scenarios.
+- From the repository root, `git diff --check` passed with LF-to-CRLF warnings; it does not include untracked files.
+
+## Phase 3 — Prompt #013E: mobile detail and reveal
+
+- Added protected UUID-only detail navigation, metadata lookup across list pages and explicit server-authorized reveal. Focus/session/route cleanup clears private state and aborts or invalidates pending requests; no reveal is automatic or persisted. See `docs/MOBILE_CAPSULE_DETAIL_013E.md` for pagination and native verification limits.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed; `npm test` passed 23 mocked tests. From the repository root, `git diff --check` passed with LF-to-CRLF warnings and excludes untracked files. No live requests were made. Next: validate focus, session changes and server-time reveal on Android using disposable fixtures.
+
+## Phase 3 — Prompt #013D: mobile self-capsule creation
+
+- Added protected text-only creation from the capsule list, manual native-compatible local date/time entry, review with timezone and server-time warning, validation, and uncertain-outcome handling without POST retries. Success clears the message and returns to a fresh list; session changes and unmount abort and invalidate submission. No backend, migration or dependency changes.
+- From `apps/mobile`, `npm run typecheck` passed, `npm run lint` passed after an initial JSX lint error was fixed, and `npm test` passed 17 mocked tests. No live requests were made. See `docs/MOBILE_CAPSULE_CREATE_013D.md` for design, timezone limitations and required Android checks. Next: verify create/list, session change, timezone and keyboard behavior on Android using disposable data.
+- From the repository root, `git diff --check` passed with LF-to-CRLF warnings; Git excludes untracked files, whose new creation files separately passed a trailing-whitespace check.
+
+## Phase 3 — Prompt #013C: mobile capsule list
+
+- Added a protected read-only list route and Home entry, using the existing capsule service. It displays metadata, local reveal time and the server's last reported status, with loading, empty, retry, pull-to-refresh, pagination and ID deduplication. Session changes remount the list; request abort and generation checks suppress stale results. No capsule data is persisted.
+- From `apps/mobile`, `npm run typecheck` passed after fixing an initial FlatList typing error; `npm run lint` passed; `npm test` passed 12 mocked tests. No live service was contacted. See `docs/MOBILE_CAPSULE_LIST_013C.md` for implementation and limitations. Next: manual Android validation and separately scoped creation work.
+- From the repository root, `git diff --check` passed with LF-to-CRLF warnings; Git does not check untracked files.
+
+## Phase 3 — Prompt #013B: mobile API foundation
+
+- Added a reusable authenticated request client while retaining Home's `/v1/auth/me` interface, plus typed and validated create/list/reveal/cancel capsule services. No screens, navigation, backend code, migrations or dependencies changed; no automatic requests, caching or POST retries were added.
+- From `apps/mobile`, `npm run typecheck` passed; `npm run lint` passed after fixing an initial test-only ESLint global error; `npm test` passed 8 mocked tests using Node's built-in runner and installed TypeScript. No live services were contacted. Backend tests were not rerun because backend code was unchanged.
+- From the repository root, `git diff --check` passed with LF-to-CRLF warnings; Git's check excludes untracked files.
+- See `docs/MOBILE_API_FOUNDATION_013B.md` for details and limitations. Next: separately implement the capsule list, abort on account changes, and verify on Android. A create timeout may have an uncertain outcome.
+
 ## Phase 2 — Prompt #012K: cancellation final review
 
 - User reports migration 0005 applied to isolated and development projects, SQL Editor tests passed, and the isolated FastAPI integration passed cross-account denial, owner cancellation, repeat, reveal denial and no-store checks. User also reports the database timestamp was set and the synthetic fixture was cleaned up with zero rows remaining. These live results were not independently verified here.

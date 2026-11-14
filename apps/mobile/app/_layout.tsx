@@ -16,7 +16,7 @@ function Routes() {
       <Stack.Screen name="sign-up" />
       <Stack.Screen name="confirm-email" />
     </Stack.Protected>
-    <Stack.Protected guard={!!session}><Stack.Screen name="home" /></Stack.Protected>
+    <Stack.Protected guard={!!session}><Stack.Screen name="home" /><Stack.Screen name="capsules" /><Stack.Screen name="create-capsule" /><Stack.Screen name="capsule/[id]" /></Stack.Protected>
   </Stack>;
 }
 
