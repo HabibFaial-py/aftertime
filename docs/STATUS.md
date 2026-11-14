@@ -1,5 +1,32 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014E-2: isolated inventory and Auth observations
+
+- User reports that the isolated inventory matched expected capsule/recipient columns, nullability and catalog-level table RLS/SELECT permissions; no recipient rows were present, three self-RPC permission checks passed, recipient constraints were validated, and `recipients_check3` blocked tokenless pending rows. These are reported results from the isolated project, not independently rerun here or proof of client-role denial.
+- User reports email-change confirmation and Secure Email Change were enabled, a supported User B session update returned HTTP 200, confirmation emails arrived, and the change completed. The reported final state was confirmed email, change status zero, no pending change and no deletion marker. No addresses, UUIDs or confirmation links are documented. See `docs/PHASE_4_AUTH_VERIFICATION_014E.md`.
+- Auth row-lock and concurrent email-change/claim behavior, direct schema and authorization, and claim/cancel/reveal races remain unverified. Next: review and separately authorize a safe isolated concurrency verification plan before migration design. No direct-capsule feature is implemented.
+
+## Phase 4 — Prompt #014E-1: isolated Auth email-change preparation
+
+- Prepared `.venv/aftertime_update_isolated_user_b_email.py` for a single user-session email update against the fixed isolated project. The paste-friendly GUI masks the publishable key/password, accepts the new address visibly and requires a final confirmation after sign-in. It does not confirm email links, display response bodies or retry requests. The installed Supabase Auth client source was inspected for its authenticated `PUT /user` request shape.
+- Python AST syntax parsing passed; `git check-ignore -v` matched `.gitignore:2`, and `git ls-files --` returned no tracked entry. The script was not run and no service was contacted. Next: independently verify User B, key provenance and the project's confirmation settings before a separately authorized manual run; provider settings determine whether confirmation is required, and a request timeout can have an uncertain outcome.
+
+## Phase 4 — Prompt #014D: pre-migration inventory preparation
+
+- Prepared read-only `services/api/tests/sql/inventory_phase4_pre_migration.sql` and `docs/PHASE_4_INVENTORY_014D.md` for the separately confirmed disposable SQL-test project. The script reports catalog metadata, effective-privilege indicators, overlapping aggregate counts and basic drift checks; literals in expressions are redacted, and small counts/catalog identifiers may still be sensitive.
+- No SQL was executed and no Supabase service contacted. PostgreSQL parsing and live privileges remain unverified; see the inventory documentation before any separately authorized execution. Direct client-role denial and Auth/concurrency require independent tests.
+- Static lexical/structural check passed for 14 SELECT statements, with balanced parentheses and no prohibited statement keywords. No PostgreSQL parser was available, so this is not a PostgreSQL syntax validation. Untracked-file whitespace check and `git diff --check` passed; Git emitted LF-to-CRLF warnings and does not check untracked files.
+
+## Phase 4 — Prompt #014C: security prerequisites
+
+- Prepared `docs/PHASE_4_SECURITY_PREREQUISITES_014C.md` with source-versus-deployed inventory, self-compatibility and abort conditions, current-confirmed-email and Auth locking evidence gaps, two-session race plans, dormant schema-slice assessment and explicitly unapproved operational defaults.
+- Static repository review only: no SQL or service requests, executable migration, application code, dependency, commit or push. Auth email-change/reassignment semantics, effective privileges, lock ordering and isolated race outcomes remain unverified; direct-capsule activation is blocked until the documented gates are resolved. Next: review decisions and separately authorize isolated verification.
+
+## Phase 4 — Prompt #014B: direct-capsule schema design
+
+- Prepared `docs/PHASE_4_SCHEMA_DESIGN_014B.md` with proposed tokenless pending-state constraints, seven-day expiry, UUID-bound claims, verified-email authority, lock ordering, service-only RPCs, sender/recipient projections, retry rules, initial abuse budgets and security/race tests. The Auth locking, email reassignment and effective-privilege assumptions remain unverified and block an executable migration until reviewed.
+- Inspected the existing migrations, self RPCs, profile provisioning and SQL test patterns. No SQL, migration, live service, application-code or dependency changes were made. Next: approve the design and resolve its listed security decisions before separately scoping executable schema work.
+
 ## Phase 3 — mobile integration commit preparation
 
 - Core mobile API integration, list, text-only creation, secure reveal and cancellation are implemented. The latest local verification passed typecheck, lint and **27 mocked mobile tests**. The user reports the core flow works smoothly on a physical Android phone; individual Android edge cases have not been independently verified here.
