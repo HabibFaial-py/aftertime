@@ -73,3 +73,29 @@ class CapsuleReveal(BaseModel):
 
     id: UUID
     body: StrictStr = Field(repr=False, max_length=2000)
+
+
+class CapsuleCancellation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    cancelled_at: datetime
+
+    @field_validator("cancelled_at", mode="before")
+    @classmethod
+    def require_timestamp_string(cls, value):
+        if not isinstance(value, str) or not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", value
+        ):
+            raise ValueError("Invalid timestamp")
+        return value
+
+    @field_validator("cancelled_at")
+    @classmethod
+    def utc_time(cls, value: datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Invalid timestamp")
+        try:
+            return value.astimezone(timezone.utc)
+        except (OverflowError, ValueError):
+            raise ValueError("Invalid timestamp") from None

@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exception_handlers import request_validation_exception_handler
 
 from app.auth import current_user
-from app.capsules import CapsuleListItem, CapsuleMetadata, CapsuleReveal, CreateCapsule
+from app.capsules import CapsuleCancellation, CapsuleListItem, CapsuleMetadata, CapsuleReveal, CreateCapsule
 from app.config import DatabaseConfigurationError
 from app.database import DatabaseInputError, DatabaseOwnerError, DatabaseRepository, DatabaseUnavailableError
 
@@ -17,14 +17,18 @@ def is_reveal_path(path: str) -> bool:
     return path.startswith("/v1/capsules/") and path.endswith("/reveal")
 
 
+def is_cancel_path(path: str) -> bool:
+    return path.startswith("/v1/capsules/") and path.endswith("/cancel")
+
+
 @app.middleware("http")
-async def reveal_cache_protection(request: Request, call_next):
-    if not is_reveal_path(request.url.path):
+async def capsule_cache_protection(request: Request, call_next):
+    if not (is_reveal_path(request.url.path) or is_cancel_path(request.url.path)):
         return await call_next(request)
     try:
         response = await call_next(request)
     except Exception:
-        # Do not log/echo provider exceptions or return a traceback for reveal.
+        # Do not log or echo provider exceptions or return a traceback.
         response = JSONResponse(status_code=503, content={"detail": "Capsule service unavailable"})
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -33,7 +37,7 @@ async def reveal_cache_protection(request: Request, call_next):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
-    if is_reveal_path(request.url.path):
+    if is_reveal_path(request.url.path) or is_cancel_path(request.url.path):
         return JSONResponse(status_code=422, content={"detail": "Invalid capsule ID"})
     if request.url.path == "/v1/capsules":
         return JSONResponse(status_code=422, content={"detail": "Invalid capsule request"})
@@ -83,6 +87,26 @@ def reveal_capsule(capsule_id: UUID, request: Request, user_id: str = Depends(cu
         raise HTTPException(status_code=422, detail="Invalid reveal request")
     try:
         result = DatabaseRepository().reveal_self_capsule(capsule_id, user_id)
+    except (DatabaseConfigurationError, DatabaseUnavailableError):
+        raise HTTPException(status_code=503, detail="Capsule service unavailable") from None
+    if result is None:
+        raise HTTPException(status_code=404, detail="Capsule unavailable")
+    return result
+
+
+async def validate_cancel_request(request: Request) -> None:
+    if request.query_params or await request.body():
+        raise HTTPException(status_code=422, detail="Invalid cancellation request")
+
+
+@app.post("/v1/capsules/{capsule_id}/cancel", response_model=CapsuleCancellation)
+def cancel_capsule(
+    capsule_id: UUID,
+    user_id: str = Depends(current_user),
+    _request: None = Depends(validate_cancel_request),
+) -> CapsuleCancellation:
+    try:
+        result = DatabaseRepository().cancel_self_capsule(capsule_id, user_id)
     except (DatabaseConfigurationError, DatabaseUnavailableError):
         raise HTTPException(status_code=503, detail="Capsule service unavailable") from None
     if result is None:

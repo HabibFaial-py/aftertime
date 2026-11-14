@@ -1,7 +1,7 @@
 # AfterTime API
 
 The API exposes `GET /health`, `GET /v1/auth/me`, `GET`/`POST /v1/capsules`,
-and `GET /v1/capsules/{capsule_id}/reveal`.
+`GET /v1/capsules/{capsule_id}/reveal`, and `POST /v1/capsules/{capsule_id}/cancel`.
 Use Python 3.11 and the existing virtual environment at the repository root.
 Run these commands in PowerShell from the repository root:
 
@@ -44,7 +44,7 @@ Check the project's actual signing algorithm and key configuration before using 
 `app/database.py` contains a minimal `DatabaseRepository` for Supabase's PostgreSQL
 Data API. It reuses pinned HTTPX 0.28.1; no dependencies or lockfile changes were
 needed. This is HTTPS/PostgREST access, not a direct PostgreSQL/SQLAlchemy connection.
-It provides a read-only connectivity check, owner-filtered listing, and self-capsule creation and reveal RPC calls.
+It provides a read-only connectivity check, owner-filtered listing, and self-capsule creation, reveal and cancellation RPC calls.
 
 Compatibility review (2026-11-12): the current [Python initialization reference](https://supabase.com/docs/reference/python/initializing)
 accepts a project URL and key, and the [Python server example](https://supabase.com/docs/reference/python/admin-api)
@@ -92,7 +92,7 @@ missing Auth user/profile is ineligible under the RPC.
 No automatic retry is performed. A timeout can happen after the transaction
 committed, so a caller may not know if a capsule was created; idempotency and
 rate limiting are not implemented and need separate design before beta. This
-endpoint does not return capsule bodies or implement read/reveal/notifications.
+endpoint does not return capsule bodies or implement notifications.
 Do not enable HTTP body or credential logging. Existing tests mock the Data API;
 they do not validate a live creation or transactional behavior.
 
@@ -527,3 +527,144 @@ microsecond boundary behavior, live PostgREST role/transport, effective inherite
 grants, SQL statement logging, and concurrent races require real isolated
 verification before implementation or deployment of reveal. The previous
 creation and listing API tests do not prove these properties.
+
+### Cancel a self-capsule
+
+`POST /v1/capsules/{capsule_id}/cancel` requires a verified Bearer JWT and a
+UUID path. Send no request body or query parameters. The repository makes one
+privileged POST to `public.aftertime_cancel_self_capsule` with `p_capsule_id`
+and the verified JWT subject as `p_requester_id`. It never forwards the JWT or
+fetches the capsule body. PostgreSQL enforces ownership, the self-recipient
+relationship, and database-clock eligibility; the API does not make a time
+decision. The RPC returns the original timestamp for an authorized repeat,
+including after unlock, provided the capsule and recipient remain eligible.
+
+Success is HTTP 200 with exactly `{"id":"<uuid>","cancelled_at":"<UTC timestamp>"}`.
+Missing or invalid authentication returns 401, invalid UUIDs or request input
+return 422, and missing, unauthorized, deleted, non-self or previously
+uncancelled unlocked capsules all return `404 {"detail":"Capsule unavailable"}`.
+Configuration, database and malformed RPC failures return a fixed 503. All
+cancellation responses, including errors, carry `Cache-Control: no-store` and
+`Pragma: no-cache`. The backend makes no automatic retry; after a timeout an
+authorized repeat can recover the original timestamp if the record and
+recipient still qualify. Never log credentials, request headers or RPC results.
+
+The user reports migration 0005 was applied to development and passed the
+disposable SQL Editor tests. This task used mocks and did not independently
+verify live PostgREST routing, SQL grants or database concurrency. For a safe
+live check, use a separately confirmed disposable project and test accounts:
+create a dedicated future-unlock capsule, cancel as its owner, verify the same
+timestamp on a repeat and generic denial for a second user, and verify reveal is
+denied. Do not use a valuable existing capsule; cancellation changes data and
+cannot be reversed by this API. Test direct-role access and races separately.
+
+## Prompt #012B: atomic self-capsule cancellation RPC
+
+Migration `0005_cancel_self_capsule.sql` adds the server-only VOLATILE function
+`public.aftertime_cancel_self_capsule(p_capsule_id uuid, p_requester_id uuid)`.
+It returns one `id, cancelled_at` row on success and zero rows for missing,
+wrong-owner, deleted, non-self or previously uncancelled unlocked capsules.
+FastAPI derives `p_requester_id` exclusively from the verified JWT subject,
+not from client input, and uses the
+separate service-role client. The service-role request does not contain the user
+JWT and the RPC trusts the backend assertion.
+
+The function locks the owned, nondeleted capsule `FOR UPDATE` without selecting
+body, then locks the claimed, bound, hashless self-recipient `FOR SHARE` in the
+same capsule-then-recipient order as reveal 0004. It rejects absent, unbound or
+invitation-backed recipients. All future writers of capsule/recipient state must
+use the same order. After both locks it captures PostgreSQL `clock_timestamp()`;
+a previously uncancelled capsule changes only when `created_at <= clock <
+unlock_at`. Equality with unlock is denied. If a clock anomaly makes the captured
+time precede creation, the operation fails closed with zero rows. On an authorized
+repeat, it returns the unchanged original cancellation timestamp even after the
+unlock time; a deleted capsule or changed recipient relationship still denies.
+No row values are returned in an error; unexpected catchable SQL errors are
+re-raised with the fixed `P0001` / `Cancellation unavailable` message. The
+API must still sanitize **all** provider errors, timeouts, query
+cancellations and malformed UUID casts; PL/pgSQL `WHEN OTHERS` does not catch
+every possible PostgreSQL failure. Database/proxy SQL logging must not record
+private rows, credentials, request parameters or exception details.
+
+This is one database transaction; an exception rolls back the update. The
+function is SECURITY DEFINER, postgres-owned with empty search_path, with EXECUTE
+revoked from PUBLIC, anon and authenticated and granted to service_role. It
+does not alter tables, RLS or table grants. The owner and administrators still
+have authority; inherited/default grants must be verified. `service_role` has
+direct table privileges and bypasses RLS, so the function does not protect
+against a compromised key or another privileged code path.
+
+**Notifications and invitations:** the current self-creation flow creates no
+jobs/invitations. This migration does not cancel existing notification rows,
+revoke invitations, stop workers or recall an external email. Do not rely on
+it as complete cancellation in an environment where those flows run. Before
+enabling them, design atomic job/invitation changes and worker rechecks under a
+shared lock protocol, including leased/already-dispatched jobs. No notification
+or invitation functionality is added by this migration.
+
+### Disposable SQL Editor verification
+
+After review, use only the **idle disposable Supabase SQL-test project**, not the
+development database. Confirm its Dashboard project reference independently.
+Apply 0005 once as postgres only after 0001–0004 exist, if it is not already
+installed in that project. The user reports these SQL tests passed in the
+disposable project; this task did not execute or independently verify them. Copy the entire
+`services/api/tests/sql/test_cancel_self_capsule_sql_editor.sql` into the SQL
+Editor; select the postgres role and replace `v_owner` and `v_other` with two
+distinct dedicated test profile UUIDs. Run the whole DO block, not fragments.
+Expected: success/no rows and an optional `PASS` notice. Any error is a failure.
+No Auth user or profile is inserted, updated or deleted. Synthetic capsule and
+recipient fixtures and the uniquely named error-injection function/trigger are
+created inside a subtransaction and deliberately rolled back even on success.
+The trigger affects only its random fixture, but its DDL takes a table lock; use
+an idle disposable project. A three-second lock timeout is set inside the test.
+
+The test covers successful cancellation, timestamp, reveal denial, repeated
+cancellation before/after unlock without timestamp change, repeat after recipient
+unbinding or deletion, cross-user, missing, deleted, unlocked, missing/unbound/
+other-user/invitation recipients, null arguments, client RPC/direct UPDATE
+denials, ACLs, RLS flags, safe projection, sanitized injected database errors,
+and cleanup. It checks safely-before and at-or-after cases. Setting `unlock_at`
+to `clock_timestamp()` before a later call does **not** prove exact microsecond
+equality. This script has not been executed or parsed by PostgreSQL here.
+
+### Two-session race verification (not run)
+
+Use two independent trusted PostgreSQL sessions in the disposable project;
+separate SQL Editor requests do not guarantee session affinity. First create a
+dedicated synthetic self-capsule with a future unlock using 0003, recording its
+fixture UUID and test owner's UUID. Never use real account/capsule data. Replace
+`<FIXTURE_UUID>` and `<OWNER_UUID>` below. Keep transactions open as instructed;
+do not print bodies. Use fresh fixtures for distinct scenarios.
+
+1. **Cancellation locks first:** session A runs `BEGIN; SET LOCAL ROLE
+   service_role; SELECT count(*) FROM public.aftertime_cancel_self_capsule(
+   '<FIXTURE_UUID>'::uuid, '<OWNER_UUID>'::uuid);` and holds the transaction;
+   expect 1. While A remains open, session B begins, sets service_role and
+   `SET LOCAL lock_timeout = '2s'`, then calls `SELECT count(*) FROM
+   public.aftertime_reveal_self_capsule('<FIXTURE_UUID>'::uuid,
+   '<OWNER_UUID>'::uuid);`. Expect lock timeout and no body. Roll back B, commit
+   A **only for the disposable fixture**, then call reveal in a new transaction;
+   expect zero rows. Verify `cancelled_at` once and that retries preserve it.
+2. **Reveal locks first:** on a fresh still-locked fixture, session A begins,
+   sets service_role, calls `SELECT count(*) FROM
+   public.aftertime_reveal_self_capsule('<FIXTURE_UUID>'::uuid,
+   '<OWNER_UUID>'::uuid);` and holds the transaction; expect zero rows but locks
+   held. In session B begin, set service_role and a short lock timeout, and call
+   cancellation; expect a timeout and roll back B. Roll back A. Repeat with a
+   fresh fixture and coordinate B's waiting cancellation across the unlock
+   deadline before releasing A: with adequate timeout, B must return zero and
+   persist no cancellation. Use database timestamps to coordinate, not device
+   time. Test cancellation-first versus reveal after the deadline as well.
+3. Repeat with concurrent capsule deletion and recipient modification, both
+   commit and rollback orders, using the same capsule-then-recipient lock order.
+   At stronger isolation, serialization failures are fail-closed, not successful
+   cancellation. Roll back failed transactions, inspect final fixture state and
+   remove only the synthetic fixtures through an approved isolated cleanup.
+
+These checks are prepared, not executed. Mocked backend tests do not prove SQL
+syntax, PostgREST behavior, lock contention or effective Supabase role grants.
+Exact equality requires a deterministic database-side test strategy; do not add
+an externally supplied clock to the production RPC. A repeat after unlock is
+intentionally successful only if that same owner previously cancelled while
+eligible; it does not perform a new cancellation after unlock.

@@ -1,10 +1,30 @@
 # AfterTime status
 
+## Phase 2 — Prompt #012K: cancellation final review
+
+- User reports migration 0005 applied to isolated and development projects, SQL Editor tests passed, and the isolated FastAPI integration passed cross-account denial, owner cancellation, repeat, reveal denial and no-store checks. User also reports the database timestamp was set and the synthetic fixture was cleaned up with zero rows remaining. These live results were not independently verified here.
+- Reviewed the nine uncommitted cancellation-related files. Targeted JWT, Supabase key and private-key pattern scans found no matches; UUID matches were SQL zero placeholders and fixed Python mock fixtures. The temporary `.venv` diagnostic scripts remain ignored and untracked. No application behavior or migrations were changed in this review.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **145 passed, 2 warnings** (Starlette TestClient deprecation and test-only short HMAC key). From root, `git diff --check` passed with LF-to-CRLF warnings; separate checks found no trailing whitespace or missing final newline in the three untracked files.
+- Next: review and commit the cancellation slice when authorized. Two-session races and exact-time equality remain unverified; notification/invitation cancellation coordination is required before those flows are enabled.
+
+## Phase 2 — Prompt #012J: cancellation test authentication alignment
+
+- User reports the authentication-order diagnostic returned HTTP 200 for both users in both orders, with authorization headers and nonempty bearer tokens; this was not independently run here. The prior cancellation-test 401 has no confirmed root cause.
+- Updated `.venv/aftertime_test_isolated_cancel.py` to import the diagnostic's sign-in logic and fixed isolated project reference, sign in both users before API verification, and retain separate clients and tokens through the cancellation checks. API requests use the diagnostic's explicit request building and send pattern. Both verified identities must pass before any cancellation request. Existing cross-user denial, owner cancellation, repeat, reveal denial and no-store assertions remain.
+- Static checks: AST parsing of both scripts passed; `git check-ignore -v` matched `.gitignore:2` for both; `git ls-files --` returned no tracked entries. The test was not executed and no network or credentials were used. Next: user may run `.venv\Scripts\python.exe .venv\aftertime_test_isolated_cancel.py` against the confirmed isolated fixture; live outcome remains unverified.
+
+## Phase 2 — Prompt #012I: isolated authentication order diagnostic
+
+- Prepared `.venv/aftertime_diagnose_isolated_auth_order.py` with paste-friendly credential input and separate HTTP clients and tokens. It signs in both accounts and checks `/v1/auth/me` in A, B, B, A order, printing only the requested safe statuses and header-presence booleans. It makes no capsule requests.
+- Code inspection found the cancellation and standalone diagnostics construct sign-in and authentication requests equivalently; the cancellation script uses a separate client and headers per sign-in. The API caches its JWKS client, not a user identity in the inspected authentication code. No cause for the reported 401 is confirmed.
+- Static check: `.venv\Scripts\python.exe -c "import ast,pathlib; p=pathlib.Path('.venv/aftertime_diagnose_isolated_auth_order.py'); ast.parse(p.read_text(encoding='utf-8'), filename=str(p)); print('Syntax OK')"` passed. `git check-ignore -v .venv/aftertime_diagnose_isolated_auth_order.py` matched `.gitignore:2`; `git ls-files -- .venv/aftertime_diagnose_isolated_auth_order.py` returned no tracked entry.
+- The diagnostic was not executed; no credentials or network were used. Next: user can run `.venv\Scripts\python.exe .venv\aftertime_diagnose_isolated_auth_order.py` and compare the four status lines. Live behavior remains unverified.
+
 Updated: 2026-11-12
 
 ## Current phase
 
-Phase 2, Prompt #011C: authenticated self-capsule reveal endpoint implemented and mock-tested. The user reports migration 0004 tested in a disposable project and applied to development; neither result was independently checked here. Migration 0004 was already uncommitted at task start. Earlier records are historical.
+Phase 2, Prompt #012C: self-capsule cancellation API implemented and tested with mocked database calls. The user reports migration 0005 applied to development and its isolated SQL Editor tests passed; those live results were not independently checked here. Earlier records are historical.
 
 ## Repository inspection
 
@@ -298,3 +318,22 @@ implement GET /health, and add a basic automated test.
 - Updated gitignored `.venv/aftertime_isolated_server.ps1` to use two masked Windows Forms text boxes that accept paste. Project reference and ISOLATED confirmation remain; URL/issuer/audience and loopback port are unchanged. Configuration is placed only in the spawned server process, with dialog fields, local key references and process-start configuration cleared on normal/error cleanup.
 - PowerShell parser and isolated key-prefix function checks with dummy strings passed; `git check-ignore` confirmed the launcher remains ignored, and `git diff --check` passed with line-ending warnings. The GUI and FastAPI server were not started; no real keys or network were used. Windows Forms/PowerShell managed strings cannot guarantee immediate in-memory erasure; clipboard content remains under user control.
 - Next: manually use the isolated launcher and verify paste and project/key provenance during the separately authorized test.
+
+## Phase 2 — Prompt #012B: self-capsule cancellation RPC
+
+- Added `services/api/migrations/0005_cancel_self_capsule.sql`: `public.aftertime_cancel_self_capsule(p_capsule_id uuid, p_requester_id uuid)` returns only `id, cancelled_at`. It checks owner and nondeleted capsule, locks capsule FOR UPDATE then claimed/self recipient FOR SHARE, and captures database wall clock after locks. A new cancellation requires `created_at <= now < unlock_at`; denials return no rows. Authorized repeats return the original timestamp, even after unlock; deletion or recipient changes deny repeats. Catchable SQL errors are reraised as a fixed generic error. The trusted backend must derive requester from verified JWT.
+- Function is postgres-owned SECURITY DEFINER with empty search_path, explicitly revokes PUBLIC/anon/authenticated and grants service_role EXECUTE. No existing migration, table grant, RLS, application, mobile/web, dependency, commit, push or deployment changes. The postgres owner and direct service_role grants remain privileged boundaries.
+- Added SQL Editor script `services/api/tests/sql/test_cancel_self_capsule_sql_editor.sql`, with random synthetic rollback-only fixtures, dedicated test-user placeholders, safe projection, owner/cross-user/recipient/deleted/unlocked checks, idempotency, reveal-after-cancel, direct role denials, ACL/RLS checks and scoped injected-error/DDL rollback. README includes isolated execution and two-session race procedures. Neither script has been run or parsed by PostgreSQL.
+- Local availability check found no `psql`, `postgres`, `pg_ctl` or `sqlfluff` on PATH; pglast and sqlparse were absent. Standard-library structural checks cover balanced dollar tags and trailing whitespace only, not SQL syntax or semantics. From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **114 passed, 2 existing warnings** (Starlette HTTPX TestClient deprecation and test-only short HMAC key). Existing backend tests do not cover this SQL. No credentials, live database or SQL requests used.
+- `git diff --check` passed with line-ending warnings only; new untracked SQL files were separately checked for trailing whitespace and balanced dollar tags.
+- Remaining verification: run the SQL Editor and two-session concurrency checks only in an idle disposable project; verify actual effective grants, generic errors, direct-client denials and PostgREST read-write invocation. Exact-microsecond unlock equality is not forced by the prepared test. No cancellation endpoint exists. The migration does not cancel notification jobs or revoke invitations; do not treat it as sufficient once those flows are enabled without atomic coordination and worker rechecks.
+- Next: review and validate 0005 in the isolated project, record actual results, then separately scope application and API work.
+
+## Phase 2 — Prompt #012C: FastAPI self-capsule cancellation
+
+- Added `POST /v1/capsules/{capsule_id}/cancel`: verified JWT subject and validated capsule UUID go to the server-only 0005 RPC as `p_requester_id` and `p_capsule_id`; no direct update, body read or API-clock eligibility check. Query parameters and request bodies are rejected. A successful response contains only ID and UTC cancellation timestamp. Empty results use the same generic 404; malformed results and database failures fail closed with a fixed 503. All route responses use no-store/no-cache, including authentication and validation failures.
+- The RPC's reported authorized repeat behavior returns the original timestamp even after unlock, unless deletion or a changed recipient disqualifies it. No automatic retries occur. User reports 0005 applied to development and isolated SQL Editor tests passed; this task did not independently access either project or verify those results.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **145 passed, 2 warnings** (existing Starlette TestClient deprecation and test-only short HMAC key). Mocked tests exercise authentication, requester isolation, RPC arguments, generic denials, response shape, repeat handling, cache headers and sanitized failures; they do not prove database enforcement, concurrency or real PostgREST behavior. No real credentials or live requests were used.
+- From the repository root, `git diff --check` passed with line-ending warnings. Git does not include untracked files in that check.
+- No migration, RLS, mobile/web, dependency, commit, push or deployment changes. Existing uncommitted 0005 and SQL test files were preserved.
+- Next: after separate authorization, test only dedicated disposable fixtures: owner cancellation and repeat, cross-account and unlocked denials, reveal after cancellation, real grants, exact unlock boundary and cancellation/reveal races. Before enabling invitations or notifications, coordinate their revocation and worker checks transactionally; rate limits and immediate session revocation remain future work.
