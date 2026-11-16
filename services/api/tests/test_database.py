@@ -130,7 +130,10 @@ def test_api_is_independent(monkeypatch, isolated_database, caplog, secret):
     assert SECRET not in health.text + unauthorized.text + caplog.text
     assert SENSITIVE not in health.text + unauthorized.text + caplog.text
     assert isolated_database["requests"] == []
-    assert {route.path for route in app.routes if route.path.startswith("/v1/")} == {
+    assert {path for path in app.openapi()["paths"] if path.startswith("/v1/")} == {
         "/v1/auth/me", "/v1/capsules", "/v1/capsules/{capsule_id}/reveal",
         "/v1/capsules/{capsule_id}/cancel",
+        "/v1/direct-capsules", "/v1/direct-capsules/invitations",
+        "/v1/direct-capsules/{capsule_id}/claim", "/v1/direct-capsules/{capsule_id}/reveal",
+        "/v1/direct-capsules/{capsule_id}/cancel",
     }

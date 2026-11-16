@@ -1,5 +1,46 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014H-2: pre-commit review
+
+- Reviewed the dormant direct-capsule implementation, migrations, tests and research. The direct flag defaults off, migration 0006 retains `CHECK (false)`, and claim and pending discovery do not query the database. Existing self-capsule implementation files remain unchanged. Test emails and UUIDs are synthetic; no credentials were found in the reviewed changes.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **200 passed, 2 existing warnings**. From the root, `git diff --check` and `git diff --cached --check` passed with line-ending warnings. No disposable local cluster was identified for this run, so destructive SQL fixtures were not rerun; previous local results are recorded below. No hosted database or Supabase service was contacted.
+- Next: resolve verified-email and Auth transaction-boundary questions, implement and test safe claim/discovery and abuse controls, and verify effective deployed privileges before considering separately authorized activation.
+
+## Phase 4 — Prompt #014H-1: claim preparation remains dormant
+
+- Added draft `0008_dormant_claim_preparation.sql`, a guarded pending-lookup index, strict metadata-only API response models and fail-closed tests. The 0006 `CHECK (false)` remains intact; claim and pending-discovery RPCs do not exist, and both API operations remain unavailable even when the direct feature flag is true. See `docs/PHASE_4_CLAIM_PREPARATION_014H1.md`.
+- Backend `python -m pytest -q`: 200 passed, two existing warnings. Local PostgreSQL 18 migrations 0001-0008 and regression/gate checks passed, including two concurrent calls to the absent claim RPC; the disposable loopback cluster was stopped and removed. This does not test successful claim, eligibility or claim races. Supabase Auth email-change transaction semantics, verified-identity authorization and abuse controls still block claim implementation and activation. No Supabase request or hosted migration was made.
+
+## Phase 4 — Prompt #014G-2: gated direct-capsule backend draft
+
+- Added separate direct storage, service-only create/cancel/reveal RPC drafts, authenticated API routes and mocked tests. `DIRECT_CAPSULES_ENABLED` defaults to false. Claim and pending discovery remain unavailable, and migration 0006's always-false constraint still blocks creation even if the flag is enabled. Existing self storage and RPCs are unchanged. See `docs/PHASE_4_DIRECT_BACKEND_014G2.md`.
+- Backend `python -m pytest -q`: 194 passed, two existing warnings. Local PostgreSQL 18 migration/SQL regression checks and a two-session cancellation-versus-reveal test passed in a disposable loopback-only cluster, which was stopped and removed. Tests used synthetic bindings and a test-only temporary gate removal; no Supabase service or original database was contacted. Auth identity concurrency, safe claiming/discovery, abuse controls and deployed privileges remain blockers to activation.
+
+## Phase 4 — Prompt #014G-1: dormant recipient foundation
+
+- Prepared migration `0006_dormant_direct_invitation_foundation.sql` and a disposable-cluster SQL test. A validated always-false constraint, RLS and revoked application grants keep the new invitation table empty and inaccessible; no direct creation, discovery, claim, cancellation or reveal is enabled. Existing self tables/RPCs remain unchanged. See `docs/PHASE_4_MIGRATION_REVIEW_014G.md` for compatibility and activation gates.
+- Local PostgreSQL 18 applied migrations 0001-0006 and passed the existing self-creation and new dormant-foundation SQL checks; its disposable loopback-only cluster was stopped and removed. Backend `python -m pytest -q`: 145 passed, two existing warnings. No live database or Supabase service was contacted. User-reported row-lock conflict is not proof of Auth email-change locking; the localhost confirmation redirect is inconclusive. Next: resolve identity and concurrency blockers before designing activation.
+
+## Phase 4 — Prompt #014F-5F: isolated Auth diagnostic categories
+
+- Updated the ignored temporary email-change script to distinguish sign-in timeout, connection/TLS or other network failure, invalid HTTP/JSON response, HTTP 401/403 rejection and other HTTP statuses without printing exception details or private data. The previous generic `httpx.HTTPError` message did not establish the underlying cause; HTTP status and JSON errors already followed separate paths. The existing HTTPS verification, project check, GUI confirmation and single update attempt remain unchanged.
+- Python AST parsing/compilation and static checks for request count, absence of retries, confirmation ordering, HTTP client options and error handlers passed; `git check-ignore -v` confirmed the script is ignored, and `git diff --check` passed with a line-ending warning. No sign-in, email update or Supabase connection was attempted. Next: any live diagnosis requires separate authorization and must preserve disposable-account safeguards.
+
+## Phase 4 — Prompt #014F-3A: psql TLS setup
+
+- Prepared `docs/PHASE_4_TLS_SETUP_014F3A.md` using local PostgreSQL 18.6/OpenSSL inspection and official documentation. The default CA file/directory and libpq root file were absent; a limited offline Windows-root/OpenSSL trust check was inconclusive. The recommended future configuration uses the authenticated Dashboard CA, exact session-pooler hostname and `verify-full`; the real pooler chain remains unverified.
+- No project service/database connection, SQL, credentials, installation or project configuration change occurred. Next: separately authorize and verify the isolated TLS connection before session-affinity or Auth-lock testing.
+
+## Phase 4 — Prompt #014F-2: PostgreSQL test setup
+
+- Prepared `docs/PHASE_4_POSTGRES_TEST_SETUP_014F2.md` for a separately authorized isolated lock experiment. PostgreSQL `psql` 18.6 exists outside PATH at the standard PostgreSQL 18 installation; the existing virtual environment has no discoverable psycopg, psycopg2, asyncpg or pg8000. No installation, SQL, connection or service request was performed.
+- Next: review TLS, privileges, safe logging, persistent-session affinity, disposable-account recovery and the lock-conflict controls before authorizing a live test. Auth locking and direct recipient claiming remain unverified.
+
+## Phase 4 — Prompt #014F: Auth lock verification design
+
+- Prepared `docs/PHASE_4_AUTH_LOCK_VERIFICATION_014F.md` with an isolated persistent-session lock probe, separate supported Auth request and confirmation stages, safe observations, timeouts and recovery. A matching `auth.users` row lock may conflict with a particular update but is not proof of the whole provider workflow or a safe claim protocol.
+- Static repository inspection only; no SQL, Auth operation, concurrency test, migration or service request was run. `psql` was not found on PATH and the checked virtualenv lacks psycopg/psycopg2/asyncpg. Direct claiming remains blocked on verified provider behavior and the other Phase 4 security gates. Next: review and separately authorize an isolated test with a verified persistent connection and disposable accounts.
+
 ## Phase 4 — Prompt #014E-2: isolated inventory and Auth observations
 
 - User reports that the isolated inventory matched expected capsule/recipient columns, nullability and catalog-level table RLS/SELECT permissions; no recipient rows were present, three self-RPC permission checks passed, recipient constraints were validated, and `recipients_check3` blocked tokenless pending rows. These are reported results from the isolated project, not independently rerun here or proof of client-role denial.

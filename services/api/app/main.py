@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -9,8 +10,14 @@ from app.auth import current_user
 from app.capsules import CapsuleCancellation, CapsuleListItem, CapsuleMetadata, CapsuleReveal, CreateCapsule
 from app.config import DatabaseConfigurationError
 from app.database import DatabaseInputError, DatabaseOwnerError, DatabaseRepository, DatabaseUnavailableError
+from app.direct_capsules import router as direct_capsules_router
 
 app = FastAPI()
+app.include_router(direct_capsules_router)
+
+
+def is_direct_path(path: str) -> bool:
+    return path == "/v1/direct-capsules" or path.startswith("/v1/direct-capsules/")
 
 
 def is_reveal_path(path: str) -> bool:
@@ -23,7 +30,11 @@ def is_cancel_path(path: str) -> bool:
 
 @app.middleware("http")
 async def capsule_cache_protection(request: Request, call_next):
-    if not (is_reveal_path(request.url.path) or is_cancel_path(request.url.path)):
+    direct = is_direct_path(request.url.path)
+    if direct and os.environ.get("DIRECT_CAPSULES_ENABLED", "").strip().lower() != "true":
+        return JSONResponse(status_code=404, content={"detail": "Not found"},
+                            headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+    if not (direct or is_reveal_path(request.url.path) or is_cancel_path(request.url.path)):
         return await call_next(request)
     try:
         response = await call_next(request)
@@ -37,6 +48,8 @@ async def capsule_cache_protection(request: Request, call_next):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
+    if is_direct_path(request.url.path):
+        return JSONResponse(status_code=422, content={"detail": "Invalid capsule request"})
     if is_reveal_path(request.url.path) or is_cancel_path(request.url.path):
         return JSONResponse(status_code=422, content={"detail": "Invalid capsule ID"})
     if request.url.path == "/v1/capsules":
