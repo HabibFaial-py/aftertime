@@ -5,6 +5,7 @@ import { authError, supabase } from '../lib/supabase';
 import { Action, Screen, styles } from '../components/ui';
 import { ApiError, getAuthenticatedUser } from '../lib/api';
 import { router } from 'expo-router';
+import { directCapsulesEnabled } from '../lib/direct-feature';
 
 export default function Home() {
   const { session } = useAuth();
@@ -54,6 +55,10 @@ export default function Home() {
     {backend === 'failed' && <><Text style={styles.error}>{backendMessage}</Text><Action title="Retry connection" onPress={() => { setBackend('checking'); setRetryCount((n) => n + 1); }} /></>}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <Action title="View capsules" onPress={() => router.push('/capsules')} />
+    {directCapsulesEnabled && <>
+      <Action title="Send to Someone" onPress={() => router.push('/send-to-someone')} />
+      <Action title="Received Capsules" onPress={() => router.push('/received-capsules')} />
+    </>}
     <Action title={busy ? 'Signing out…' : 'Log out'} disabled={busy} onPress={() => void logout()} />
   </Screen>;
 }

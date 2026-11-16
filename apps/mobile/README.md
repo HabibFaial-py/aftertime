@@ -19,6 +19,12 @@ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. Expo embeds these public values in the
 app. Never use a secret/service-role key. Root ignore rules exclude .env.
 Restart Expo and reload after changes. No actual credentials are supplied.
 
+`EXPO_PUBLIC_DIRECT_CAPSULES_ENABLED` defaults to `false`. Setting it to the
+exact value `true` before restarting Expo exposes the authenticated, UI-only
+Send to Someone and Received Capsules screens for local review. The flag is
+public and is not an authorization control. Sending, inbox loading and claims
+are not connected; no capsule can be sent or claimed from these screens.
+
 Set `EXPO_PUBLIC_API_BASE_URL` in that same `.env` to the FastAPI server's
 origin, for example `http://<laptop-lan-ip>:8001` in local development. On
 Android, `localhost` refers to the phone, not the laptop: use the laptop's

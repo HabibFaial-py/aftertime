@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ActivityIndicator, Text } from 'react-native';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { Action, Screen, styles } from '../components/ui';
+import { directCapsulesEnabled } from '../lib/direct-feature';
 
 function Routes() {
   const { session, loading, error, retry } = useAuth();
@@ -17,6 +18,10 @@ function Routes() {
       <Stack.Screen name="confirm-email" />
     </Stack.Protected>
     <Stack.Protected guard={!!session}><Stack.Screen name="home" /><Stack.Screen name="capsules" /><Stack.Screen name="create-capsule" /><Stack.Screen name="capsule/[id]" /></Stack.Protected>
+    <Stack.Protected guard={!!session && directCapsulesEnabled}>
+      <Stack.Screen name="send-to-someone" />
+      <Stack.Screen name="received-capsules" />
+    </Stack.Protected>
   </Stack>;
 }
 
