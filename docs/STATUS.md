@@ -1,5 +1,29 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014K-4: direct unlock-time review
+
+- The local-only Send to Someone form now validates the selected local time using the self-capsule parser, rejects invalid and ambiguous clock-change times, and displays the local date, time, timezone, offset and UTC ISO equivalent. The 90-day limit uses elapsed time. Direct features remain disabled by default; no request or simulated creation was added.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed; `npm test` passed **37 tests**. Tests cover calendar and 90-day boundaries, UTC serialization, timezone offsets and DST gaps/folds using Node timezone data. Android device behavior and accessibility were not manually tested.
+- Next: before any direct integration, revalidate the selected time and timezone at submission, handle device clock/timezone changes, and enforce the window and reveal using authoritative server/database time. Review recipient normalization, identity and claim/discovery security, abuse controls and activation gates. No backend, migration or Supabase changes were made.
+
+## Phase 4 — Prompt #014K-3: mobile UI commit review
+
+- Reviewed the guarded mobile UI and its tests; the flag defaults off, sending and received-capsule loading remain unavailable, and the reviewed test addresses use the reserved `.invalid` domain. No backend, migration or Supabase operation was made.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed, and `npm test` passed **33 tests**. From the root, `git diff --check` and `git diff --cached --check` passed before staging; staged changes require their own final check.
+- Next: manually verify Android navigation and accessibility, then separately address reveal-time confirmation, UTC serialization, normalization and server-side identity and claim security before any integration or activation.
+
+## Phase 4 — Prompt #014K-2: direct form contract review
+
+- Added a Title input and passed the actual title into local validation. The API requires nonblank, UTF-8-encodable title and body without NUL, with a 2,000-code-point body limit and no title length limit. Recipient email is required with a 254-code-point raw limit and backend normalization; local validation also checks the normalized length required by the draft SQL. Unlock time must be timezone-aware, future and within 90 days.
+- From `apps/mobile`: `npm run typecheck`, `npm run lint` and `npm test` passed; **33 tests passed**. The form remains local-only and the direct flag defaults off. No Supabase operation or backend/migration change was made. Android device testing was not performed.
+- Next: before connecting the form, implement exact local-time confirmation and reviewed UTC request serialization; verify Unicode/email normalization differences and rely on server/database time and validation. Auth identity, claim/discovery, abuse controls and activation gates remain unresolved.
+
+## Phase 4 — Prompt #014K-1: mobile direct-capsule UI foundation
+
+- Added authenticated, feature-guarded Send to Someone and Received Capsules routes using the existing mobile styles. `EXPO_PUBLIC_DIRECT_CAPSULES_ENABLED` is false by default. The send screen validates email, message and local reveal date/time without submitting; the received screen defaults to unavailable, with testable loading, error and empty presentations and pending/claimed placeholders. No direct-capsule API, Supabase connection, backend or migration change was made.
+- From `apps/mobile`: `npm run typecheck` passed; `npm run lint` passed; `npm test` passed **33 tests**, including six new foundation tests. Android device and real navigation/deep-link behavior were not manually tested. The public flag is a UI switch, not authorization.
+- Next: manually review the guarded screens on Android. Before integration, resolve the recipient identity and claim/discovery security blockers, specify how the direct API's required title will be collected, and implement reviewed server-enforced authorization and complete time confirmation. Do not enable the backend or database gate for this UI.
+
 ## Phase 4 — Prompt #014H-2: pre-commit review
 
 - Reviewed the dormant direct-capsule implementation, migrations, tests and research. The direct flag defaults off, migration 0006 retains `CHECK (false)`, and claim and pending discovery do not query the database. Existing self-capsule implementation files remain unchanged. Test emails and UUIDs are synthetic; no credentials were found in the reviewed changes.
