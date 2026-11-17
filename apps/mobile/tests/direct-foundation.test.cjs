@@ -87,7 +87,12 @@ test('home exposes direct links only when enabled and keeps self navigation', ()
 test('direct draft validates required fields and API text limits', () => {
   class ApiError extends Error {}
   const self = load('lib/capsule-create.ts', { './api': { ApiError }, './capsules': {} });
-  const { validateDirectDraft } = load('lib/direct-draft.ts', { './capsule-create': self });
+  const unlock = load('lib/direct-unlock-time.ts', { './capsule-create': self });
+  const direct = load('lib/direct-draft.ts', { './direct-unlock-time': unlock });
+  const validateDirectDraft = (draft, now) => {
+    const result = direct.validateDirectDraft(draft, now);
+    return result.ok ? '' : result.error;
+  };
   const now = Date.now();
   const future = new Date(now + 2 * 86400000);
   const pad = (n) => String(n).padStart(2, '0');
@@ -124,7 +129,9 @@ test('send screen checks input without submitting and clears feedback on edit', 
     return [values[index], (value) => { values[index] = value; }]; } };
   const screen = load('app/send-to-someone.tsx', { react, 'react-native': native, '../components/ui': ui,
     'expo-router': { router: { replace: (path) => { destination = path; } } },
-    '../lib/direct-draft': { validateDirectDraft: (draft) => { checked = draft; return draft.recipient ? '' : 'Enter a valid recipient email address.'; } },
+    '../lib/direct-draft': { validateDirectDraft: (draft) => { checked = draft; return draft.recipient ?
+      { ok: true, utc: '2026-12-31T19:00:00.000Z', offset: 'UTC+05:00' } :
+      { ok: false, error: 'Enter a valid recipient email address.' }; } },
   }).default;
   function render() { cursor = 0; return screen(); }
   function action(tree, title) { return findAll(tree, (element) => element.type === 'Action' && element.props.title === title)[0]; }
@@ -132,10 +139,17 @@ test('send screen checks input without submitting and clears feedback on edit', 
   assert.match(JSON.stringify(render()), /valid recipient email/);
   findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Recipient email')[0].props.onChangeText('person@example.invalid');
   findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Title')[0].props.onChangeText('A title');
+  findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Local reveal date, year month day')[0].props.onChangeText('2027-01-01');
+  findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Local reveal time, 24-hour hours and minutes')[0].props.onChangeText('00:00');
   assert.doesNotMatch(JSON.stringify(render()), /valid recipient email/);
   action(render(), 'Check details').props.onPress();
   assert.equal(checked.title, 'A title');
   assert.match(JSON.stringify(render()), /Nothing has been sent/);
+  for (const text of ['Confirm reveal time', 'Local date:', '2027-01-01', 'Local time:', '00:00', 'Timezone:', 'UTC+05:00', 'UTC equivalent:', '2026-12-31T19:00:00.000Z']) {
+    assert.ok(JSON.stringify(render()).includes(text), `missing ${text}`);
+  }
+  findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Local reveal time, 24-hour hours and minutes')[0].props.onChangeText('00:01');
+  assert.doesNotMatch(JSON.stringify(render()), /UTC equivalent/);
   assert.equal(findAll(render(), (element) => element.type === 'Action' && /send|seal/i.test(element.props.title)).length, 0);
   action(render(), 'Back to home').props.onPress(); assert.equal(destination, '/home');
 });

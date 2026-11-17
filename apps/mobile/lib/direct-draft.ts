@@ -1,4 +1,4 @@
-import { validateDraft } from './capsule-create';
+import { validateDirectUnlockTime } from './direct-unlock-time';
 
 type DirectDraft = { recipient: string; title: string; body: string; date: string; time: string };
 
@@ -11,18 +11,19 @@ function hasInvalidUnicode(value: string): boolean {
 }
 
 // This validates only. There is no direct-capsule submission in this slice.
-export function validateDirectDraft(draft: DirectDraft, now = Date.now()): string {
+export function validateDirectDraft(draft: DirectDraft, now = Date.now()) {
   const recipient = draft.recipient.trim().toLowerCase();
   if (Array.from(draft.recipient).length > 254 || Array.from(recipient).length > 254 ||
       !/^[^@\s]+@[^@\s]+$/.test(recipient) || recipient.includes('\0') || hasInvalidUnicode(recipient)) {
-    return 'Enter a valid recipient email address.';
+    return { ok: false as const, error: 'Enter a valid recipient email address.' };
   }
-  if (!draft.title.trim()) return 'Enter a title.';
-  if (!draft.body.trim()) return 'Enter a message.';
-  if (hasInvalidUnicode(draft.title) || hasInvalidUnicode(draft.body)) {
-    return 'Remove invalid characters from your text.';
+  if (!draft.title.trim()) return { ok: false as const, error: 'Enter a title.' };
+  if (!draft.body.trim()) return { ok: false as const, error: 'Enter a message.' };
+  if (draft.title.includes('\0') || draft.body.includes('\0') || hasInvalidUnicode(draft.title) || hasInvalidUnicode(draft.body)) {
+    return { ok: false as const, error: 'Remove invalid characters from your text.' };
   }
-  // Reuse the self-capsule text and local time rules without creating a request.
-  const result = validateDraft({ title: draft.title, body: draft.body, date: draft.date, time: draft.time }, now);
-  return result.ok ? '' : result.error;
+  if (Array.from(draft.body).length > 2000) {
+    return { ok: false as const, error: 'Your message must be 2,000 characters or fewer.' };
+  }
+  return validateDirectUnlockTime(draft.date, draft.time, now);
 }

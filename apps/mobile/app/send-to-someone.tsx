@@ -11,15 +11,16 @@ export default function SendToSomeoneScreen() {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [feedback, setFeedback] = useState('');
-  const [valid, setValid] = useState(false);
+  const [reviewed, setReviewed] = useState<{ date: string; time: string; timezone: string; offset: string; utc: string } | null>(null);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'device local time';
 
   function checkDetails() {
-    const error = validateDirectDraft({ recipient, title, body, date, time });
-    setValid(!error);
-    setFeedback(error || 'Sending is not available yet. Nothing has been sent.');
+    const result = validateDirectDraft({ recipient, title, body, date, time });
+    if (!result.ok) { setReviewed(null); setFeedback(result.error); return; }
+    setReviewed({ date, time, timezone, offset: result.offset, utc: result.utc });
+    setFeedback('Sending is not available yet. Nothing has been sent.');
   }
-  function clearFeedback() { setFeedback(''); setValid(false); }
+  function clearFeedback() { setFeedback(''); setReviewed(null); }
 
   return <Screen>
     <Text accessibilityRole="header" style={styles.title}>Send to Someone</Text>
@@ -43,7 +44,14 @@ export default function SendToSomeoneScreen() {
       onChangeText={(value) => { setTime(value); clearFeedback(); }} placeholder="HH:MM" placeholderTextColor="#6A5C52" />
     <Text style={styles.text}>Timezone: {timezone}. Enter the local date and time on your device.</Text>
     <Action title="Check details" onPress={checkDetails} />
-    {feedback ? <Text accessibilityRole={valid ? undefined : 'alert'} accessibilityLiveRegion="polite" style={valid ? styles.text : styles.error}>{feedback}</Text> : null}
+    {reviewed ? <>
+      <Text accessibilityRole="header" style={styles.label}>Confirm reveal time</Text>
+      <Text style={styles.text}>Local date: {reviewed.date}</Text>
+      <Text style={styles.text}>Local time: {reviewed.time}</Text>
+      <Text style={styles.text}>Timezone: {reviewed.timezone} ({reviewed.offset})</Text>
+      <Text style={styles.text}>UTC equivalent: {reviewed.utc}</Text>
+    </> : null}
+    {feedback ? <Text accessibilityRole={reviewed ? undefined : 'alert'} accessibilityLiveRegion="polite" style={reviewed ? styles.text : styles.error}>{feedback}</Text> : null}
     <Action title="Back to home" onPress={() => router.replace('/home')} />
   </Screen>;
 }
