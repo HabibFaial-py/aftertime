@@ -1,18 +1,27 @@
 import { ActivityIndicator, Text } from 'react-native';
-import { styles } from './ui';
+import { Action, styles } from './ui';
 
-// These states are presentation only until a reviewed recipient service exists.
+// Presentation only. A future caller should use 'empty' only when both lists are known to be empty.
 export type ReceivedState = 'unavailable' | 'loading' | 'error' | 'empty';
 
-export function ReceivedCapsulesContent({ state }: { state: ReceivedState }) {
+const statusText: Record<ReceivedState, string> = {
+  unavailable: 'Received capsules are not available yet.',
+  loading: 'Loading received capsules…',
+  error: 'Received capsules could not be loaded.',
+  empty: 'Nothing here yet.',
+};
+
+// A retry is shown only when a future caller provides a real recovery action.
+export function ReceivedCapsulesContent({ state, onRetry }: { state: ReceivedState; onRetry?: () => void }) {
   return <>
-    {state === 'unavailable' && <Text style={styles.text}>Received capsules are not available yet.</Text>}
-    {state === 'loading' && <ActivityIndicator accessibilityLabel="Loading received capsules" color="#A65338" />}
-    {state === 'error' && <Text accessibilityRole="alert" style={styles.error}>Received capsules could not be loaded.</Text>}
-    {state === 'empty' && <Text style={styles.text}>You have no received capsules yet.</Text>}
-    <Text accessibilityRole="header" style={styles.label}>Pending</Text>
-    <Text style={styles.text}>Pending capsules will appear here when available.</Text>
-    <Text accessibilityRole="header" style={styles.label}>Claimed</Text>
-    <Text style={styles.text}>Claimed capsules will appear here when available.</Text>
+    <Text accessibilityLiveRegion="polite" style={state === 'error' ? styles.error : styles.text}>{statusText[state]}</Text>
+    {state === 'loading' && <ActivityIndicator accessible={false} importantForAccessibility="no" color="#A65338" />}
+    {state === 'error' && onRetry && <Action title="Retry" onPress={onRetry} />}
+    {(state === 'unavailable' || state === 'empty') && <>
+      <Text accessibilityRole="header" style={styles.label}>Pending</Text>
+      <Text style={styles.text}>{state === 'empty' ? 'No pending invitations.' : 'Pending invitations will appear here when available.'}</Text>
+      <Text accessibilityRole="header" style={styles.label}>Claimed</Text>
+      <Text style={styles.text}>{state === 'empty' ? 'No received capsules.' : 'Received capsules will appear here when available.'}</Text>
+    </>}
   </>;
 }

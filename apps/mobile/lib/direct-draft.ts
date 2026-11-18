@@ -15,15 +15,19 @@ export function validateDirectDraft(draft: DirectDraft, now = Date.now()) {
   const recipient = draft.recipient.trim().toLowerCase();
   if (Array.from(draft.recipient).length > 254 || Array.from(recipient).length > 254 ||
       !/^[^@\s]+@[^@\s]+$/.test(recipient) || recipient.includes('\0') || hasInvalidUnicode(recipient)) {
-    return { ok: false as const, error: 'Enter a valid recipient email address.' };
+    return { ok: false as const, field: 'recipient' as const, error: 'Enter a valid recipient email address.' };
   }
-  if (!draft.title.trim()) return { ok: false as const, error: 'Enter a title.' };
-  if (!draft.body.trim()) return { ok: false as const, error: 'Enter a message.' };
-  if (draft.title.includes('\0') || draft.body.includes('\0') || hasInvalidUnicode(draft.title) || hasInvalidUnicode(draft.body)) {
-    return { ok: false as const, error: 'Remove invalid characters from your text.' };
+  if (!draft.title.trim()) return { ok: false as const, field: 'title' as const, error: 'Enter a title.' };
+  if (!draft.body.trim()) return { ok: false as const, field: 'body' as const, error: 'Enter a message.' };
+  if (draft.title.includes('\0') || hasInvalidUnicode(draft.title)) {
+    return { ok: false as const, field: 'title' as const, error: 'Remove invalid characters from your title.' };
+  }
+  if (draft.body.includes('\0') || hasInvalidUnicode(draft.body)) {
+    return { ok: false as const, field: 'body' as const, error: 'Remove invalid characters from your message.' };
   }
   if (Array.from(draft.body).length > 2000) {
-    return { ok: false as const, error: 'Your message must be 2,000 characters or fewer.' };
+    return { ok: false as const, field: 'body' as const, error: 'Your message must be 2,000 characters or fewer.' };
   }
-  return validateDirectUnlockTime(draft.date, draft.time, now);
+  const time = validateDirectUnlockTime(draft.date, draft.time, now);
+  return time.ok ? time : { ...time, field: 'dateTime' as const };
 }

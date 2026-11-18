@@ -26,7 +26,8 @@ function findAll(node, predicate) {
 }
 
 const ui = { Screen: 'Screen', Action: 'Action', styles: { title: {}, text: {}, label: {}, input: {}, error: {} } };
-const native = { Text: 'Text', TextInput: 'TextInput', ActivityIndicator: 'ActivityIndicator' };
+const native = { Text: 'Text', TextInput: 'TextInput', View: 'View', ActivityIndicator: 'ActivityIndicator', StyleSheet: { create: (styles) => styles } };
+const formScroll = { useDirectFormScroll: () => ({ scrollRef: {}, onFocus() {}, onBlur() {}, onFeedbackLayout() {}, showFeedback() {} }) };
 
 test('flag defaults off and only exact true enables it', () => {
   const previous = process.env.EXPO_PUBLIC_DIRECT_CAPSULES_ENABLED;
@@ -121,22 +122,34 @@ test('direct draft validates required fields and API text limits', () => {
   assert.match(validateDirectDraft({ ...draft, date: '2000-01-01' }, now), /future/);
   const tooLate = new Date(now + 91 * 86400000);
   assert.match(validateDirectDraft({ ...draft, date: `${tooLate.getFullYear()}-${pad(tooLate.getMonth() + 1)}-${pad(tooLate.getDate())}` }, now), /90 days/);
+  for (const [changes, field] of [
+    [{ recipient: 'bad' }, 'recipient'], [{ title: '' }, 'title'], [{ title: 'bad\0' }, 'title'],
+    [{ body: '' }, 'body'], [{ body: 'bad\0' }, 'body'], [{ body: 'a'.repeat(2001) }, 'body'],
+    [{ date: '2026-02-30' }, 'dateTime'],
+  ]) assert.equal(direct.validateDirectDraft({ ...draft, ...changes }, now).field, field);
 });
 
 test('send screen checks input without submitting and clears feedback on edit', () => {
   const values = []; let cursor = 0; let destination; let checked;
-  const react = { useState(initial) { const index = cursor++; if (!(index in values)) values[index] = initial;
-    return [values[index], (value) => { values[index] = value; }]; } };
+  const react = { useEffect() {}, useState(initial) { const index = cursor++; if (!(index in values)) values[index] = initial;
+    return [values[index], (value) => { values[index] = typeof value === 'function' ? value(values[index]) : value; }]; } };
   const screen = load('app/send-to-someone.tsx', { react, 'react-native': native, '../components/ui': ui,
     'expo-router': { router: { replace: (path) => { destination = path; } } },
+    '../components/use-direct-form-scroll': formScroll,
+    '../lib/direct-unlock-time': { isDirectTimeReviewCurrent: () => true },
     '../lib/direct-draft': { validateDirectDraft: (draft) => { checked = draft; return draft.recipient ?
       { ok: true, utc: '2026-12-31T19:00:00.000Z', offset: 'UTC+05:00' } :
-      { ok: false, error: 'Enter a valid recipient email address.' }; } },
+      { ok: false, field: 'recipient', error: 'Enter a valid recipient email address.' }; } },
   }).default;
   function render() { cursor = 0; return screen(); }
   function action(tree, title) { return findAll(tree, (element) => element.type === 'Action' && element.props.title === title)[0]; }
   action(render(), 'Check details').props.onPress();
   assert.match(JSON.stringify(render()), /valid recipient email/);
+  const recipientInput = findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Recipient email')[0];
+  assert.equal(recipientInput.props.accessibilityHint, 'Enter a valid recipient email address.');
+  const liveRegions = findAll(render(), (element) => element.props?.accessibilityLiveRegion === 'polite');
+  assert.equal(liveRegions.length, 1);
+  assert.equal(liveRegions[0].props.children, 'Enter a valid recipient email address.');
   findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Recipient email')[0].props.onChangeText('person@example.invalid');
   findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Title')[0].props.onChangeText('A title');
   findAll(render(), (element) => element.type === 'TextInput' && element.props.accessibilityLabel === 'Local reveal date, year month day')[0].props.onChangeText('2027-01-01');
@@ -145,6 +158,7 @@ test('send screen checks input without submitting and clears feedback on edit', 
   action(render(), 'Check details').props.onPress();
   assert.equal(checked.title, 'A title');
   assert.match(JSON.stringify(render()), /Nothing has been sent/);
+  assert.equal(findAll(render(), (element) => element.type === 'Text' && element.props.accessibilityRole === 'header' && element.props.children === 'Confirm reveal time').length, 1);
   for (const text of ['Confirm reveal time', 'Local date:', '2027-01-01', 'Local time:', '00:00', 'Timezone:', 'UTC+05:00', 'UTC equivalent:', '2026-12-31T19:00:00.000Z']) {
     assert.ok(JSON.stringify(render()).includes(text), `missing ${text}`);
   }
@@ -154,15 +168,127 @@ test('send screen checks input without submitting and clears feedback on edit', 
   action(render(), 'Back to home').props.onPress(); assert.equal(destination, '/home');
 });
 
-test('received screen defaults to unavailable and supports loading, error and empty presentation', () => {
+test('review monitoring invalidates on a failed check or app background and requires another review', () => {
+  const slots = []; let cursor = 0; let pending = []; let timer; let listener; let removed = 0; let checks = 0; let current = true;
+  const originalSetInterval = global.setInterval; const originalClearInterval = global.clearInterval;
+  global.setInterval = (callback) => { timer = callback; return 1; };
+  global.clearInterval = () => { timer = undefined; };
+  const appState = { currentState: 'active', addEventListener(_event, callback) {
+    listener = callback; return { remove() { removed++; listener = undefined; } };
+  } };
+  const react = {
+    useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = initial;
+      return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }]; },
+    useEffect(callback, deps) { const index = cursor++; const previous = slots[index];
+      if (!previous || deps.some((value, i) => value !== previous.deps[i])) {
+        pending.push(() => { previous?.cleanup?.(); slots[index] = { deps, cleanup: callback() }; });
+      }
+    },
+  };
+  try {
+    const screen = load('app/send-to-someone.tsx', { react, 'react-native': { ...native, AppState: appState }, '../components/ui': ui,
+      'expo-router': { router: { replace() {} } },
+      '../components/use-direct-form-scroll': formScroll,
+      '../lib/direct-draft': { validateDirectDraft: () => ({ ok: true, utc: '2030-01-01T00:00:00.000Z', offset: 'UTC+00:00' }) },
+      '../lib/direct-unlock-time': { isDirectTimeReviewCurrent: () => { checks++; return current; } },
+    }).default;
+    function render() { cursor = 0; pending = []; const tree = screen(); pending.forEach((effect) => effect()); return tree; }
+    function check() { findAll(render(), (element) => element.type === 'Action' && element.props.title === 'Check details')[0].props.onPress(); render(); }
+    function hasReview() { return JSON.stringify(render()).includes('UTC equivalent'); }
+    check(); assert.equal(hasReview(), true); assert.equal(checks, 1);
+    current = false; timer(); assert.equal(hasReview(), false);
+    assert.match(JSON.stringify(render()), /needs to be checked again/);
+    assert.equal(timer, undefined); assert.equal(listener, undefined);
+    current = true; check(); assert.equal(hasReview(), true);
+    listener('background'); assert.equal(hasReview(), false);
+    assert.match(JSON.stringify(render()), /needs to be checked again/);
+    assert.equal(listener, undefined);
+    check(); assert.equal(hasReview(), true);
+    assert.ok(removed >= 2);
+  } finally {
+    global.setInterval = originalSetInterval; global.clearInterval = originalClearInterval;
+  }
+});
+
+test('each validation error uses one live region and is attached to its field', () => {
+  const values = []; let cursor = 0; let failure;
+  const react = { useEffect() {}, useState(initial) { const index = cursor++; if (!(index in values)) values[index] = initial;
+    return [values[index], (value) => { values[index] = typeof value === 'function' ? value(values[index]) : value; }]; } };
+  const screen = load('app/send-to-someone.tsx', { react, 'react-native': native, '../components/ui': ui,
+    'expo-router': { router: {} }, '../lib/direct-unlock-time': {}, '../components/use-direct-form-scroll': formScroll,
+    '../lib/direct-draft': { validateDirectDraft: () => ({ ok: false, ...failure }) },
+  }).default;
+  function render() { cursor = 0; return screen(); }
+  for (const [field, labels] of [
+    ['recipient', ['Recipient email']], ['title', ['Title']], ['body', ['Private message']],
+    ['dateTime', ['Local reveal date, year month day', 'Local reveal time, 24-hour hours and minutes']],
+  ]) {
+    failure = { field, error: `Check ${field}.` };
+    findAll(render(), (element) => element.type === 'Action' && element.props.title === 'Check details')[0].props.onPress();
+    const tree = render();
+    for (const label of labels) {
+      const input = findAll(tree, (element) => element.type === 'TextInput' && element.props.accessibilityLabel === label)[0];
+      assert.equal(input.props.accessibilityHint, failure.error);
+    }
+    const live = findAll(tree, (element) => element.props?.accessibilityLiveRegion === 'polite');
+    assert.equal(live.length, 1); assert.equal(live[0].props.children, failure.error);
+  }
+});
+
+test('both screens use top-aligned scrolling and form checks request feedback visibility', () => {
+  const values = []; let cursor = 0; let calls = 0; let valid = false;
+  const onFocus = () => {}; const onBlur = () => {}; const onFeedbackLayout = () => {}; const scrollRef = {};
+  const react = { useEffect() {}, useState(initial) { const index = cursor++; if (!(index in values)) values[index] = initial;
+    return [values[index], (value) => { values[index] = typeof value === 'function' ? value(values[index]) : value; }]; } };
+  const scroll = { useDirectFormScroll: () => ({ scrollRef, onFocus, onBlur, onFeedbackLayout, showFeedback: () => { calls++; } }) };
+  const screen = load('app/send-to-someone.tsx', { react, 'react-native': native, '../components/ui': ui,
+    'expo-router': { router: {} }, '../components/use-direct-form-scroll': scroll, '../lib/direct-unlock-time': {},
+    '../lib/direct-draft': { validateDirectDraft: () => valid ? { ok: true, offset: 'UTC+00:00', utc: '2030-01-01T00:00:00.000Z' }
+      : { ok: false, field: 'recipient', error: 'Check email.' } },
+  }).default;
+  function render() { cursor = 0; return screen(); }
+  let tree = render(); assert.equal(tree.props.topAligned, true); assert.equal(tree.props.scrollRef, scrollRef);
+  for (const input of findAll(tree, (element) => element.type === 'TextInput')) {
+    assert.equal(input.props.onFocus, onFocus); assert.equal(input.props.onBlur, onBlur);
+  }
+  assert.equal(findAll(tree, (element) => element.type === 'View' && element.props.onLayout === onFeedbackLayout).length, 1);
+  findAll(tree, (element) => element.type === 'Action' && element.props.title === 'Check details')[0].props.onPress();
+  valid = true; tree = render();
+  findAll(tree, (element) => element.type === 'Action' && element.props.title === 'Check details')[0].props.onPress();
+  assert.equal(calls, 2);
+  const received = load('app/received-capsules.tsx', { 'react-native': native, '../components/ui': ui,
+    'expo-router': { router: {} }, '../components/received-capsules': { ReceivedCapsulesContent: 'Content' },
+  }).default;
+  assert.equal(received().props.topAligned, true);
+});
+
+test('received screen defaults to unavailable and presents accessible local states', () => {
   const content = load('components/received-capsules.tsx', { 'react-native': native, './ui': ui }).ReceivedCapsulesContent;
   for (const [state, expected] of [['unavailable', 'not available yet'], ['loading', 'Loading received capsules'],
-    ['error', 'could not be loaded'], ['empty', 'no received capsules']]) {
+    ['error', 'could not be loaded'], ['empty', 'Nothing here yet']]) {
     const tree = content({ state }); const text = JSON.stringify(tree);
-    assert.match(text, new RegExp(expected)); assert.match(text, /Pending/); assert.match(text, /Claimed/);
+    assert.match(text, new RegExp(expected));
+    const status = findAll(tree, (element) => element.type === 'Text' && element.props.accessibilityLiveRegion === 'polite');
+    assert.equal(status.length, 1); assert.match(status[0].props.children, new RegExp(expected));
+    assert.equal(findAll(tree, (element) => element.type === 'Action' && element.props.title === 'Retry').length, 0);
+    const spinner = findAll(tree, (element) => element.type === 'ActivityIndicator');
+    assert.equal(spinner.length, state === 'loading' ? 1 : 0);
+    if (spinner.length) { assert.equal(spinner[0].props.accessible, false); assert.equal(spinner[0].props.importantForAccessibility, 'no'); }
+    if (state === 'empty') {
+      assert.match(text, /No pending invitations/); assert.match(text, /No received capsules/);
+      assert.equal(findAll(tree, (element) => element.props?.accessibilityRole === 'header').length, 2);
+    }
+    if (state === 'unavailable') { assert.match(text, /Pending invitations will appear/); assert.match(text, /Received capsules will appear/); }
   }
+  let retries = 0;
+  for (const state of ['unavailable', 'loading', 'empty']) {
+    assert.equal(findAll(content({ state, onRetry: () => { retries++; } }), (element) => element.type === 'Action').length, 0);
+  }
+  const retry = findAll(content({ state: 'error', onRetry: () => { retries++; } }), (element) => element.type === 'Action')[0];
+  assert.equal(retry.props.title, 'Retry'); assert.equal(retries, 0); retry.props.onPress(); assert.equal(retries, 1);
   const screen = load('app/received-capsules.tsx', { 'react-native': native, '../components/ui': ui,
     'expo-router': { router: { replace: () => {} } }, '../components/received-capsules': { ReceivedCapsulesContent: content },
   }).default;
-  assert.equal(findAll(screen(), (element) => element.type === content)[0].props.state, 'unavailable');
+  const routeContent = findAll(screen(), (element) => element.type === content)[0];
+  assert.equal(routeContent.props.state, 'unavailable'); assert.equal(routeContent.props.onRetry, undefined);
 });

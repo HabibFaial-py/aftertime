@@ -1,11 +1,11 @@
-import { PropsWithChildren } from 'react';
+import { ComponentRef, PropsWithChildren, RefObject } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export function Screen({ children }: PropsWithChildren) {
+export function Screen({ children, scrollRef, topAligned = false }: PropsWithChildren<{ scrollRef?: RefObject<ComponentRef<typeof ScrollView> | null>; topAligned?: boolean }>) {
   return <SafeAreaView style={styles.screen}>
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>{children}</ScrollView>
+      <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, topAligned && styles.topAligned]}>{children}</ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
@@ -19,6 +19,7 @@ export function Action({ title, onPress, disabled = false }: { title: string; on
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FBF6EF' },
   content: { flexGrow: 1, justifyContent: 'center', padding: 28, gap: 20, width: '100%', maxWidth: 480, alignSelf: 'center' },
+  topAligned: { justifyContent: 'flex-start' },
   title: { fontSize: 34, fontWeight: '600', color: '#332A25' },
   text: { fontSize: 17, lineHeight: 26, color: '#6A5C52' },
   label: { fontSize: 16, fontWeight: '600', color: '#332A25', marginBottom: 8 },

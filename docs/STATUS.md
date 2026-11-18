@@ -1,5 +1,23 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014K-9: received-capsule presentation states
+
+- Received Capsules now has visible, polite status text for unavailable, loading, error and empty presentations. The decorative loading indicator is hidden from accessibility; the empty presentation distinguishes pending invitations from received capsules. An error shows Retry only when a caller supplies a recovery callback. The live route remains unavailable and direct features remain disabled by default.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed; `npm test` passed **43 tests**. Local component tests cover status semantics, empty wording, retry availability and the unavailable route. No direct API, Supabase, backend or migration changes were made.
+- Next: verify transitions, announcements, retry focus, small-screen layout and large font scaling on an Android device using local state fixtures. Before integration, securely implement recipient discovery and claiming; only report both sections empty when both are actually known to be empty.
+
+## Phase 4 — Prompt #014K-8: Android keyboard and small-screen layout
+
+- Send to Someone and Received Capsules use top-aligned scroll content. The send form requests a scroll to the focused input when the keyboard is visible and to the feedback area after checking details, while keeping the shared safe area, keyboard avoidance, handled taps and accessible focus order. No dependency, direct API, Supabase, backend or migration changes were made.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed; `npm test` passed **43 tests**. The new scroll and keyboard-event tests use mocks and do not verify native layout or actual visibility.
+- Next: verify on physical Android devices with small screens, large font/display scaling, different keyboards, keyboard open/close transitions and TalkBack. Confirm focused fields, validation feedback and the entire time confirmation can be reached without clipping. Existing time-review and direct-integration limitations remain.
+
+## Phase 4 — Prompt #014K-7: Android form feedback and time review
+
+- Send to Someone now attaches validation guidance to the affected field and uses one polite live region for feedback; the review remains reachable in normal screen-reader order. A review is discarded when the app leaves the foreground and checked while active for timezone, clock and time-window changes. Clock drift checks have a one-second tolerance and run approximately once per second.
+- From `apps/mobile`, `npm run typecheck` and `npm run lint` passed; `npm test` passed **40 tests**. Tests use mocked UI and lifecycle behavior and Node timezones; TalkBack announcements, keyboard behavior, Android timezone/clock updates and lifecycle behavior still require real-device verification. No direct API, Supabase, backend or migration changes were made.
+- Next: verify on Android with TalkBack and different keyboard and timezone settings. Before future submission, synchronously revalidate and compare the reviewed instant and timezone, require renewed review after changes, and rely on authoritative server/database time. Identity, claim security and direct-feature activation remain separate work.
+
 ## Phase 4 — Prompt #014K-4: direct unlock-time review
 
 - The local-only Send to Someone form now validates the selected local time using the self-capsule parser, rejects invalid and ambiguous clock-change times, and displays the local date, time, timezone, offset and UTC ISO equivalent. The 90-day limit uses elapsed time. Direct features remain disabled by default; no request or simulated creation was added.

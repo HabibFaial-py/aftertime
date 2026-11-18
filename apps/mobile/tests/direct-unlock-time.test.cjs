@@ -19,7 +19,7 @@ function load(file, dependencies) {
 }
 
 const self = load('lib/capsule-create.ts', { './api': {}, './capsules': {} });
-const { validateDirectUnlockTime: check } = load('lib/direct-unlock-time.ts', { './capsule-create': self });
+const { validateDirectUnlockTime: check, isDirectTimeReviewCurrent } = load('lib/direct-unlock-time.ts', { './capsule-create': self });
 const day = 86400000;
 
 function inZone(zone, run) {
@@ -81,3 +81,23 @@ test('rejects DST gaps and folds, including half-hour changes and a skipped day'
     assert.equal(check('2011-12-30', '12:00', Date.parse('2011-12-01T00:00:00Z')).ok, false);
   });
 });
+
+test('review expires for clock changes, timezone changes and both time-window boundaries', () => inZone('UTC', () => {
+  const wallClock = Date.parse('2028-01-01T12:00:00Z');
+  const review = { date: '2028-01-02', time: '12:00', timezone: 'UTC', offset: 'UTC+00:00',
+    utc: '2028-01-02T12:00:00.000Z', wallClock, monotonicClock: 5000 };
+  const current = (now, monotonic = 5000, zone = 'UTC') => isDirectTimeReviewCurrent(review, now, monotonic, zone);
+  assert.equal(current(wallClock), true);
+  assert.equal(current(wallClock + 5000, 10000), true);
+  assert.equal(current(wallClock + 5001, 10000), true);
+  assert.equal(current(wallClock + 2000), false);
+  assert.equal(current(wallClock - 2000), false);
+  assert.equal(current(wallClock, 5000, 'Europe/London'), false);
+  assert.equal(current(wallClock, 4999), false);
+  const instant = Date.parse(review.utc);
+  assert.equal(isDirectTimeReviewCurrent({ ...review, wallClock: instant - 1 }, instant - 1, 5000, 'UTC'), true);
+  assert.equal(isDirectTimeReviewCurrent({ ...review, wallClock: instant }, instant, 5000, 'UTC'), false);
+  assert.equal(isDirectTimeReviewCurrent({ ...review, wallClock: instant - 90 * day }, instant - 90 * day, 5000, 'UTC'), true);
+  assert.equal(isDirectTimeReviewCurrent({ ...review, wallClock: instant - 90 * day - 1 }, instant - 90 * day - 1, 5000, 'UTC'), false);
+  inZone('America/New_York', () => assert.equal(current(wallClock), false));
+}));
