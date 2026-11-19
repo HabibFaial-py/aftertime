@@ -6,6 +6,16 @@
 - From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **203 passed, two existing warnings**. On disposable loopback PostgreSQL 18, local migrations 0001–0009, the new fixture checks and self-creation SQL regression passed; the local Auth schema was a stub. No hosted database, Supabase, email or mobile integration was used. The local server was stopped.
 - Next: separately scope dormant random-secret issuance and encrypted outbox; verify real Auth/session deletion, effective deployed privileges, abuse controls and delivery security before any separately authorized activation.
 
+## Phase 4 — Prompt #014H-3: recipient identity recommendation
+
+- Prepared `docs/PHASE_4_IDENTITY_DECISION_014H3.md`: recommends an explicit mailbox-delivered single-use claim secret, conditional on accepting bearer-possession semantics in place of a current confirmed-email match. It specifies the dormant claim-core implementation slice, delivery and race requirements, and outstanding identity, abuse and deployment blockers. Claiming remains unavailable and activation gates remain intact.
+- Documentation review only; no application code, migration execution, backend/SQL tests or Supabase contact. Next: approve the identity semantics and scope before implementing the proposed gated local claim core; activation requires separate security verification and authorization.
+
+## Phase 4 — #014H-2 session report
+
+- Added `docs/PHASE_4_CLAIM_IMPLEMENTATION_014H2.md`, distinguishing the recorded pre-commit review and earlier simulated tests from the #014K-10 mobile review. Claim and discovery remain unavailable; provider identity boundaries and secure claim implementation remain blockers. No application, migration or feature-gate changes and no service contact were made for the report.
+- Backend and SQL tests were not rerun for this documentation task. Next: review the report and separately scope isolated identity verification before claim implementation or activation.
+
 ## Phase 4 — Prompt #014K-10: dormant Android foundation review
 
 - Reviewed the Send to Someone form, its local time review and UTC serialization, review invalidation, keyboard scrolling and accessibility, the Received presentation states, and navigation guards. The #014K-7, #014K-8 and #014K-9 implementations are present. No concrete locally reproducible problem was found, so no application code or regression tests were changed.
