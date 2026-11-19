@@ -1,12 +1,15 @@
 """Direct-capsule endpoints. Claims remain unavailable until identity is proven."""
 
+import base64
+import binascii
+import hashlib
 import re
 from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictStr, ValidationError, field_validator
 
 from app.auth import current_user
 from app.capsules import CapsuleCancellation, CapsuleReveal, CreateCapsule
@@ -66,6 +69,30 @@ class ClaimedDirectCapsuleMetadata(DirectCapsuleCreated):
     """Proposed claim result; never a body or title."""
 
 
+class DirectClaimRequest(BaseModel):
+    """Dormant contract: unpadded base64url encoding of 32 random bytes."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    secret: SecretStr = Field(repr=False)
+
+    @field_validator("secret")
+    @classmethod
+    def validate_secret(cls, value: SecretStr) -> SecretStr:
+        text = value.get_secret_value()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]", text):
+            raise ValueError("Invalid invitation secret")
+        try:
+            decoded = base64.b64decode(text + "=", altchars=b"-_", validate=True)
+        except (ValueError, binascii.Error):
+            raise ValueError("Invalid invitation secret") from None
+        if len(decoded) != 32:
+            raise ValueError("Invalid invitation secret")
+        return value
+
+    def digest(self) -> bytes:
+        return hashlib.sha256(base64.urlsafe_b64decode(self.secret.get_secret_value() + "=")).digest()
+
+
 class DirectCapsuleRepository:
     def __init__(self) -> None:
         self._settings = get_database_settings()
@@ -106,6 +133,22 @@ class DirectCapsuleRepository:
             raise DatabaseUnavailableError()
         try:
             return DirectCapsuleCreated.model_validate(rows[0])
+        except (ValueError, ValidationError):
+            raise DatabaseUnavailableError() from None
+
+    def claim(self, capsule_id: UUID, verified_user_id: str, request: DirectClaimRequest):
+        """Unwired: verified_user_id must come from current_user, never request data."""
+        rows = self._rpc("aftertime_claim_direct_capsule", {
+            "p_capsule_id": str(capsule_id), "p_claimant_id": verified_user_id,
+            "p_secret_digest": "\\x" + request.digest().hex(),
+        })
+        if not rows:
+            return None
+        try:
+            result = ClaimedDirectCapsuleMetadata.model_validate(rows[0])
+            if result.id != capsule_id:
+                raise DatabaseUnavailableError()
+            return result
         except (ValueError, ValidationError):
             raise DatabaseUnavailableError() from None
 
@@ -154,7 +197,7 @@ def list_pending_invitations(_user_id: str = Depends(current_user),
              responses={503: {"description": "Claiming is unavailable"}})
 def claim_direct_capsule(capsule_id: UUID, _user_id: str = Depends(current_user),
                          _request: None = Depends(no_extra_request_data)) -> ClaimedDirectCapsuleMetadata:
-    # There is intentionally no claim RPC, even when the feature flag is true.
+    # The draft claim RPC and request model are deliberately not wired here.
     raise HTTPException(status_code=503, detail="Capsule service unavailable")
 
 

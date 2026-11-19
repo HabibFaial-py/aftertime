@@ -1,14 +1,19 @@
 import json
 import time
+import base64
+import hashlib
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from uuid import UUID
 
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
 from app import auth, direct_capsules
@@ -244,3 +249,42 @@ def test_claim_rejects_body_and_does_not_trust_jwt_email(setup, monkeypatch):
     assert response.status_code == 422 and EMAIL not in response.text and OTHER not in response.text
     response = request("POST", path, user_token)
     assert response.status_code == 503 and EMAIL not in response.text and not state["requests"]
+
+
+def test_dormant_claim_request_accepts_only_canonical_secret_and_masks_repr():
+    raw = secrets.token_bytes(32)
+    encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+    claim = direct_capsules.DirectClaimRequest(secret=encoded)
+    assert claim.digest() == hashlib.sha256(raw).digest()
+    assert encoded not in repr(claim)
+    assert encoded not in repr(claim.secret)
+    for invalid in (encoded + "=", encoded[:-1], "!" * 43, encoded[:-1] + "B"):
+        with pytest.raises(ValidationError) as failure:
+            direct_capsules.DirectClaimRequest(secret=invalid)
+        assert invalid not in str(failure.value)
+    with pytest.raises(ValidationError):
+        direct_capsules.DirectClaimRequest(secret=encoded, claimant_id=USER)
+
+
+def test_unwired_claim_repository_uses_verified_subject_and_digest_only(setup, caplog):
+    token, state = setup
+    verified = auth.current_user(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token()))
+    raw = secrets.token_bytes(32)
+    encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+    claim = direct_capsules.DirectClaimRequest(secret=encoded)
+    result = direct_capsules.DirectCapsuleRepository().claim(UUID(CAPSULE), verified, claim)
+    assert str(result.id) == CAPSULE
+    sent, = state["requests"]
+    assert sent.url.path.endswith("/rpc/aftertime_claim_direct_capsule")
+    assert json.loads(sent.content) == {"p_capsule_id": CAPSULE, "p_claimant_id": USER,
+                                        "p_secret_digest": "\\x" + hashlib.sha256(raw).hexdigest()}
+    assert encoded not in sent.content.decode() and encoded not in caplog.text
+
+
+def test_claim_contract_does_not_enable_public_endpoint(setup, monkeypatch):
+    token, state = setup
+    monkeypatch.setenv("DIRECT_CAPSULES_ENABLED", "true")
+    secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode("ascii")
+    response = request("POST", f"/v1/direct-capsules/{CAPSULE}/claim", token(), json={"secret": secret})
+    assert response.status_code == 422
+    assert secret not in response.text and not state["requests"]

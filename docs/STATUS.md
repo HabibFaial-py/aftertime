@@ -1,5 +1,11 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014H-4: dormant invitation claim foundation
+
+- Prepared migration 0009, a masked bearer-secret request model and unwired digest-only claim repository helper; the public endpoint still fails closed and the validated 0006 `CHECK (false)` remains. Local fixture tests cover claim, replay, expiry, revocation, authorization, account/capsule deletion and cancellation races; they use redirected copies of the SQL functions because the actual gate prevents invitation rows. See `docs/PHASE_4_INVITATION_CLAIM_014H4.md` for limits and prerequisites.
+- From `services/api`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **203 passed, two existing warnings**. On disposable loopback PostgreSQL 18, local migrations 0001–0009, the new fixture checks and self-creation SQL regression passed; the local Auth schema was a stub. No hosted database, Supabase, email or mobile integration was used. The local server was stopped.
+- Next: separately scope dormant random-secret issuance and encrypted outbox; verify real Auth/session deletion, effective deployed privileges, abuse controls and delivery security before any separately authorized activation.
+
 ## Phase 4 — Prompt #014K-10: dormant Android foundation review
 
 - Reviewed the Send to Someone form, its local time review and UTC serialization, review invalidation, keyboard scrolling and accessibility, the Received presentation states, and navigation guards. The #014K-7, #014K-8 and #014K-9 implementations are present. No concrete locally reproducible problem was found, so no application code or regression tests were changed.
