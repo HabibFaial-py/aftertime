@@ -1,5 +1,13 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014K-10: dormant Android foundation review
+
+- Reviewed the Send to Someone form, its local time review and UTC serialization, review invalidation, keyboard scrolling and accessibility, the Received presentation states, and navigation guards. The #014K-7, #014K-8 and #014K-9 implementations are present. No concrete locally reproducible problem was found, so no application code or regression tests were changed.
+- The direct feature flag defaults off; both direct routes require a session and the flag. The send form validates locally and has no submission action or direct API call. Received always renders unavailable; its other states are presentation-only. Existing self-capsule code was unchanged. Guard and UI tests use mocks and do not establish native deep-link, keyboard or TalkBack behavior.
+- From `apps/mobile`: `npm run typecheck` passed; `npm run lint` passed; `npm test` passed **43 tests**. No Android device checks, Supabase contact, backend or migration changes, commit, push or deployment occurred.
+- Android checks remain: on a small screen, open each keyboard and reach every input, feedback and the full time review; repeat with large font and display scaling. With TalkBack, check reading order, labels, field errors, announcements and navigation. Review a time, change timezone and clock, background/resume, and verify a fresh review is required. Test back navigation and direct deep links with the flag off and when signed out; use local fixtures to inspect Received loading/error/empty and Retry behavior without implying real data.
+- Before direct integration or activation, securely establish recipient identity and claiming, server-enforced access and unlock time, and appropriate cross-account and direct-access tests. Before any future submission, synchronously revalidate the reviewed instant and timezone. Device clock checks are presentation safeguards, not authorization. Next: complete the Android checks and separately scope secure backend integration.
+
 ## Phase 4 — Prompt #014K-9: received-capsule presentation states
 
 - Received Capsules now has visible, polite status text for unavailable, loading, error and empty presentations. The decorative loading indicator is hidden from accessibility; the empty presentation distinguishes pending invitations from received capsules. An error shows Retry only when a caller supplies a recovery callback. The live route remains unavailable and direct features remain disabled by default.
