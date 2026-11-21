@@ -4,6 +4,7 @@ import base64
 import binascii
 import hashlib
 import re
+import secrets
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -91,6 +92,13 @@ class DirectClaimRequest(BaseModel):
 
     def digest(self) -> bytes:
         return hashlib.sha256(base64.urlsafe_b64decode(self.secret.get_secret_value() + "=")).digest()
+
+
+def generate_invitation_secret() -> DirectClaimRequest:
+    """Generate a masked, unwired claim secret; secure delivery is not implemented."""
+    raw = secrets.token_bytes(32)
+    encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+    return DirectClaimRequest(secret=encoded)
 
 
 class DirectCapsuleRepository:

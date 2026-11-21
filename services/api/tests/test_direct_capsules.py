@@ -266,6 +266,37 @@ def test_dormant_claim_request_accepts_only_canonical_secret_and_masks_repr():
         direct_capsules.DirectClaimRequest(secret=encoded, claimant_id=USER)
 
 
+def test_generated_invitation_secret_matches_claim_contract(monkeypatch):
+    raw = bytes(range(32))
+    calls = []
+
+    def random_bytes(count):
+        calls.append(count)
+        return raw
+
+    monkeypatch.setattr(direct_capsules.secrets, "token_bytes", random_bytes)
+    claim = direct_capsules.generate_invitation_secret()
+    encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+    assert calls == [32]
+    assert claim.secret.get_secret_value() == encoded
+    assert claim.digest() == hashlib.sha256(raw).digest()
+    assert encoded not in repr(claim) and encoded not in repr(claim.secret)
+
+
+def test_generated_invitation_secret_uses_random_source_and_fails_closed(monkeypatch):
+    first = direct_capsules.generate_invitation_secret()
+    second = direct_capsules.generate_invitation_secret()
+    assert first.secret.get_secret_value() != second.secret.get_secret_value()
+    assert len(base64.urlsafe_b64decode(first.secret.get_secret_value() + "=")) == 32
+
+    def unavailable(_count):
+        raise OSError("random source unavailable")
+
+    monkeypatch.setattr(direct_capsules.secrets, "token_bytes", unavailable)
+    with pytest.raises(OSError):
+        direct_capsules.generate_invitation_secret()
+
+
 def test_unwired_claim_repository_uses_verified_subject_and_digest_only(setup, caplog):
     token, state = setup
     verified = auth.current_user(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token()))
