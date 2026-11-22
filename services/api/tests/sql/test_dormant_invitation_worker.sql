@@ -1,5 +1,5 @@
--- Disposable loopback cluster only. Creates committed synthetic fixture objects
--- to allow genuine independent dblink worker transactions, then removes them.
+-- Disposable loopback cluster only, after migrations 0011 and 0012. Creates
+-- committed synthetic fixture objects for independent dblink transactions.
 \set ON_ERROR_STOP on
 BEGIN;
 \ir setup_local_encrypted_outbox.sql
@@ -19,6 +19,8 @@ REVOKE ALL ON FUNCTION fixture014i4.aftertime_invitation_worker_candidates() FRO
 REVOKE ALL ON FUNCTION fixture014i4.aftertime_invitation_worker_transition(uuid,uuid,text) FROM PUBLIC;
 GRANT USAGE ON SCHEMA fixture014i4 TO aftertime_invitation_worker;
 GRANT EXECUTE ON FUNCTION fixture014i4.aftertime_invitation_worker_candidates() TO aftertime_invitation_worker;
+-- This grant applies only to the copied historical implementation, so its
+-- behavior can be regression-tested. The public legacy RPC stays revoked.
 GRANT EXECUTE ON FUNCTION fixture014i4.aftertime_invitation_worker_transition(uuid,uuid,text) TO aftertime_invitation_worker;
 CREATE EXTENSION dblink;
 DO $$ DECLARE n int; b text; BEGIN
@@ -32,12 +34,22 @@ DO $$ DECLARE n int; b text; BEGIN
 END $$;
 COMMIT;
 
-DO $$ DECLARE fn regprocedure := 'public.aftertime_invitation_worker_transition(uuid,uuid,text)'::regprocedure; BEGIN
+DO $$ DECLARE
+  fn regprocedure := 'public.aftertime_invitation_worker_transition(uuid,uuid,text)'::regprocedure;
+  candidates regprocedure := 'public.aftertime_invitation_worker_candidates()'::regprocedure;
+  v2 regprocedure := 'public.aftertime_invitation_worker_transition_v2(uuid,text,uuid,bigint)'::regprocedure;
+BEGIN
   IF has_function_privilege('anon', fn, 'EXECUTE') OR has_function_privilege('authenticated', fn, 'EXECUTE')
      OR has_function_privilege('service_role', fn, 'EXECUTE')
-     OR NOT has_function_privilege('aftertime_invitation_worker', fn, 'EXECUTE')
+     OR has_function_privilege('aftertime_invitation_worker', fn, 'EXECUTE')
+     OR has_function_privilege('anon', candidates, 'EXECUTE') OR has_function_privilege('authenticated', candidates, 'EXECUTE')
+     OR has_function_privilege('service_role', candidates, 'EXECUTE')
+     OR NOT has_function_privilege('aftertime_invitation_worker', candidates, 'EXECUTE')
+     OR has_function_privilege('anon', v2, 'EXECUTE') OR has_function_privilege('authenticated', v2, 'EXECUTE')
+     OR has_function_privilege('service_role', v2, 'EXECUTE')
+     OR NOT has_function_privilege('aftertime_invitation_worker', v2, 'EXECUTE')
      OR has_table_privilege('aftertime_invitation_worker','public.invitation_delivery_outbox','SELECT,INSERT,UPDATE,DELETE')
-     OR EXISTS (SELECT FROM pg_roles WHERE rolname='aftertime_invitation_worker' AND rolcanlogin) THEN
+     OR EXISTS (SELECT FROM pg_roles WHERE rolname='aftertime_invitation_worker' AND (rolcanlogin OR rolinherit)) THEN
     RAISE EXCEPTION 'Unsafe worker privileges';
   END IF;
 END $$;
@@ -55,6 +67,10 @@ END $$;
 RESET ROLE;
 SET ROLE aftertime_invitation_worker;
 DO $$ BEGIN
+  BEGIN PERFORM public.aftertime_invitation_worker_transition(NULL,NULL,'lease');
+    RAISE EXCEPTION 'worker legacy RPC allowed'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM public.aftertime_invitation_worker_candidates();
+  PERFORM public.aftertime_invitation_worker_transition_v2(NULL,'lease',NULL,NULL);
   BEGIN PERFORM ciphertext FROM public.invitation_delivery_outbox;
     RAISE EXCEPTION 'worker direct table access allowed'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;

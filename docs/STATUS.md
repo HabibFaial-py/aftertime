@@ -1,5 +1,12 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014I-6D: SQL regression compatibility
+
+- Updated `test_dormant_invitation_worker.sql` for the final 0012 permissions: the worker cannot execute the public caller-token transition, but can execute candidate lookup and the fenced v2 transition. The test checks client/service denials, the no-login/no-inherit worker and direct outbox denial. Its legacy transition grant is limited to a copied synthetic fixture; no migration or production permission changed.
+- On the verified disposable PostgreSQL 18.6 cluster at `127.0.0.1:55485`, with 0012 already applied, `psql -X -h 127.0.0.1 -p 55485 -U postgres -d aftertime_rpc_test -v ON_ERROR_STOP=1 -f` passed for `test_dormant_invitation_worker.sql`, `test_dormant_worker_reliability.sql`, `test_dormant_invitation_outbox.sql` and `test_create_self_capsule.sql`. The worker tests use committed synthetic fixtures and copied functions; the other checks roll back. Before and after testing, the dedicated data directory, loopback binding, empty fixture state and validated 0006 `CHECK (false)` were verified.
+- From `services/api`, with `$env:AFTERTIME_LOCAL_OUTBOX_TEST='1'`, `..\..\.venv\Scripts\python.exe -m pytest -q`: **300 passed, 2 existing warnings**. `..\..\.venv\Scripts\python.exe -m compileall -q app tests` passed. The cluster was stopped after testing; sandboxed start and stop failed with Windows restricted-token/permission errors, while elevated start and stop succeeded. No hosted Supabase or email was used.
+- No further 0011/0012 regression incompatibility was observed in these local checks. Fixture copies and a simplified Auth stub do not prove hosted privileges, real-driver behavior or external delivery. Next: review cancellation and identity policy and test a local real DB-driver adapter with commit/disconnect ambiguity and fake-provider reconciliation; keep the worker, direct feature and delivery disabled pending security review.
+
 ## Phase 4 — Prompt #014I-6: dormant worker reliability
 
 - Added draft 0012 with database-generated random lease tokens, per-job fencing generations and explicit transition outcomes; revoked the worker's old caller-token RPC. Added an unwired DB-API adapter that returns acknowledgements only after a reported successful commit and treats commit exceptions as unknown. `run_delivery` remains fail-closed; cancellation after a committed prepare can still race with sending. See `docs/PHASE_4_WORKER_RELIABILITY_014I6.md`.
