@@ -235,7 +235,7 @@ test('each validation error uses one live region and is attached to its field', 
   }
 });
 
-test('both screens use top-aligned scrolling and form checks request feedback visibility', () => {
+test('send screen uses top-aligned scrolling and form checks request feedback visibility', () => {
   const values = []; let cursor = 0; let calls = 0; let valid = false;
   const onFocus = () => {}; const onBlur = () => {}; const onFeedbackLayout = () => {}; const scrollRef = {};
   const react = { useEffect() {}, useState(initial) { const index = cursor++; if (!(index in values)) values[index] = initial;
@@ -256,39 +256,4 @@ test('both screens use top-aligned scrolling and form checks request feedback vi
   valid = true; tree = render();
   findAll(tree, (element) => element.type === 'Action' && element.props.title === 'Check details')[0].props.onPress();
   assert.equal(calls, 2);
-  const received = load('app/received-capsules.tsx', { 'react-native': native, '../components/ui': ui,
-    'expo-router': { router: {} }, '../components/received-capsules': { ReceivedCapsulesContent: 'Content' },
-  }).default;
-  assert.equal(received().props.topAligned, true);
-});
-
-test('received screen defaults to unavailable and presents accessible local states', () => {
-  const content = load('components/received-capsules.tsx', { 'react-native': native, './ui': ui }).ReceivedCapsulesContent;
-  for (const [state, expected] of [['unavailable', 'not available yet'], ['loading', 'Loading received capsules'],
-    ['error', 'could not be loaded'], ['empty', 'Nothing here yet']]) {
-    const tree = content({ state }); const text = JSON.stringify(tree);
-    assert.match(text, new RegExp(expected));
-    const status = findAll(tree, (element) => element.type === 'Text' && element.props.accessibilityLiveRegion === 'polite');
-    assert.equal(status.length, 1); assert.match(status[0].props.children, new RegExp(expected));
-    assert.equal(findAll(tree, (element) => element.type === 'Action' && element.props.title === 'Retry').length, 0);
-    const spinner = findAll(tree, (element) => element.type === 'ActivityIndicator');
-    assert.equal(spinner.length, state === 'loading' ? 1 : 0);
-    if (spinner.length) { assert.equal(spinner[0].props.accessible, false); assert.equal(spinner[0].props.importantForAccessibility, 'no'); }
-    if (state === 'empty') {
-      assert.match(text, /No pending invitations/); assert.match(text, /No received capsules/);
-      assert.equal(findAll(tree, (element) => element.props?.accessibilityRole === 'header').length, 2);
-    }
-    if (state === 'unavailable') { assert.match(text, /Pending invitations will appear/); assert.match(text, /Received capsules will appear/); }
-  }
-  let retries = 0;
-  for (const state of ['unavailable', 'loading', 'empty']) {
-    assert.equal(findAll(content({ state, onRetry: () => { retries++; } }), (element) => element.type === 'Action').length, 0);
-  }
-  const retry = findAll(content({ state: 'error', onRetry: () => { retries++; } }), (element) => element.type === 'Action')[0];
-  assert.equal(retry.props.title, 'Retry'); assert.equal(retries, 0); retry.props.onPress(); assert.equal(retries, 1);
-  const screen = load('app/received-capsules.tsx', { 'react-native': native, '../components/ui': ui,
-    'expo-router': { router: { replace: () => {} } }, '../components/received-capsules': { ReceivedCapsulesContent: content },
-  }).default;
-  const routeContent = findAll(screen(), (element) => element.type === content)[0];
-  assert.equal(routeContent.props.state, 'unavailable'); assert.equal(routeContent.props.onRetry, undefined);
 });

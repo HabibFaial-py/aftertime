@@ -134,6 +134,6 @@ def test_api_is_independent(monkeypatch, isolated_database, caplog, secret):
         "/v1/auth/me", "/v1/capsules", "/v1/capsules/{capsule_id}/reveal",
         "/v1/capsules/{capsule_id}/cancel",
         "/v1/direct-capsules", "/v1/direct-capsules/invitations",
-        "/v1/direct-capsules/{capsule_id}/claim", "/v1/direct-capsules/{capsule_id}/reveal",
+        "/v1/direct-capsules/{capsule_id}/claim",
         "/v1/direct-capsules/{capsule_id}/cancel",
     }

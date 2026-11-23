@@ -59,17 +59,23 @@ def connect_local():
 
 
 class FixtureCursor:
+    query = RPC_QUERY
+    role = "aftertime_invitation_worker"
+
     def __init__(self, conn):
         self.cursor = conn.cursor()
 
     def execute(self, query, args):
-        if query != RPC_QUERY:
+        if query != self.query:
             raise ValueError("Unexpected test query")
-        self.cursor.execute("SET LOCAL ROLE aftertime_invitation_worker")
+        self.cursor.execute(psycopg.sql.SQL("SET LOCAL ROLE {}").format(psycopg.sql.Identifier(self.role)))
         self.cursor.execute(query.replace("public.", "fixture014i4."), args)
 
     def fetchall(self):
         return self.cursor.fetchall()
+
+    def fetchmany(self, size):
+        return self.cursor.fetchmany(size)
 
     def close(self):
         self.cursor.close()
@@ -79,13 +85,14 @@ class FixtureConnection:
     """Translate only the known worker RPC to the isolated copied function."""
 
     autocommit = False
+    cursor_type = FixtureCursor
 
     def __init__(self, commit_fault=None):
         self.conn = connect_local()
         self.commit_fault = commit_fault
 
     def cursor(self):
-        return FixtureCursor(self.conn)
+        return self.cursor_type(self.conn)
 
     def commit(self):
         if self.commit_fault == "disconnect_before_commit":
@@ -102,6 +109,25 @@ class FixtureConnection:
 
     def close(self):
         self.conn.close()
+
+
+class InboxCursor(FixtureCursor):
+    role = "service_role"
+    query = ("SELECT id, sender_id, created_at, unlock_at, status FROM "
+             "public.aftertime_list_received_direct_capsules(%s::uuid,%s::integer,%s::integer)")
+
+
+class RevealCursor(FixtureCursor):
+    role = "service_role"
+    query = "SELECT id, body FROM public.aftertime_reveal_direct_capsule(%s::uuid,%s::uuid)"
+
+
+class InboxConnection(FixtureConnection):
+    cursor_type = InboxCursor
+
+
+class RevealConnection(FixtureConnection):
+    cursor_type = RevealCursor
 
 
 class FakeProviderTimeout(Exception):
@@ -235,9 +261,14 @@ class LocalDelivery:
         return "send_unknown"
 
 
-def setup_fixture():
+def setup_fixture(*, recipient_reads=False):
     """Create a uniquely marked fixture only after independent cluster checks."""
     marker = uuid4()
+    service_functions = ["aftertime_claim_direct_capsule(uuid,uuid,bytea)",
+                         "aftertime_cancel_direct_capsule(uuid,uuid)"]
+    if recipient_reads:
+        service_functions += ["aftertime_list_received_direct_capsules(uuid,integer,integer)",
+                              "aftertime_reveal_direct_capsule(uuid,uuid)"]
     with connect_local() as conn:
         with conn.cursor() as cur:
             cur.execute(SETUP.read_text(encoding="utf-8"))
@@ -245,8 +276,7 @@ def setup_fixture():
             cur.execute("INSERT INTO fixture014i4.test_marker VALUES (%s)", (marker,))
             for signature in ("aftertime_invitation_worker_candidates()",
                               "aftertime_invitation_worker_transition_v3(uuid,text,uuid,bigint,bigint)",
-                              "aftertime_claim_direct_capsule(uuid,uuid,bytea)",
-                              "aftertime_cancel_direct_capsule(uuid,uuid)"):
+                              *service_functions):
                 cur.execute("SELECT pg_get_functiondef(%s::regprocedure)", ("public." + signature,))
                 definition = cur.fetchone()[0].replace("FUNCTION public.", "FUNCTION fixture014i4.")
                 for table in ("direct_capsules", "direct_capsule_invitations", "invitation_delivery_outbox"):
@@ -256,8 +286,8 @@ def setup_fixture():
             cur.execute("GRANT USAGE ON SCHEMA fixture014i4 TO aftertime_invitation_worker")
             cur.execute("GRANT EXECUTE ON FUNCTION fixture014i4.aftertime_invitation_worker_candidates(), "
                         "fixture014i4.aftertime_invitation_worker_transition_v3(uuid,text,uuid,bigint,bigint) TO aftertime_invitation_worker")
-            cur.execute("GRANT EXECUTE ON FUNCTION fixture014i4.aftertime_claim_direct_capsule(uuid,uuid,bytea), "
-                        "fixture014i4.aftertime_cancel_direct_capsule(uuid,uuid) TO service_role")
+            functions = ", ".join("fixture014i4." + signature for signature in service_functions)
+            cur.execute(f"GRANT EXECUTE ON FUNCTION {functions} TO service_role")
             cur.execute("INSERT INTO auth.users(id,email,email_confirmed_at) VALUES (%s,%s,clock_timestamp())",
                         (CLAIMANT, CLAIMANT_EMAIL))
     return marker

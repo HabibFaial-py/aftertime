@@ -144,23 +144,19 @@ def test_claim_and_discovery_remain_unavailable_when_enabled(setup, monkeypatch,
     assert request(method, path, token()).status_code == 503 and not state["requests"]
 
 
-@pytest.mark.parametrize("path,method,rpc,payload", [
-    (f"/v1/direct-capsules/{CAPSULE}/cancel", "POST", "aftertime_cancel_direct_capsule",
-     {"id": CAPSULE, "cancelled_at": STAMP}),
-    (f"/v1/direct-capsules/{CAPSULE}/reveal", "GET", "aftertime_reveal_direct_capsule",
-     {"id": CAPSULE, "body": BODY}),
-])
-def test_cancel_reveal_success_and_generic_denial(setup, monkeypatch, path, method, rpc, payload):
+def test_cancel_success_and_generic_denial(setup, monkeypatch):
     token, state = setup
     monkeypatch.setenv("DIRECT_CAPSULES_ENABLED", "true")
+    path = f"/v1/direct-capsules/{CAPSULE}/cancel"
+    payload = {"id": CAPSULE, "cancelled_at": STAMP}
     state["payload"] = [payload]
-    response = request(method, path, token())
+    response = request("POST", path, token())
     assert response.status_code == 200 and response.json() == payload
     sent, = state["requests"]
-    assert sent.url.path.endswith("/rpc/" + rpc)
+    assert sent.url.path.endswith("/rpc/aftertime_cancel_direct_capsule")
     assert json.loads(sent.content) == {"p_capsule_id": CAPSULE, "p_requester_id": USER}
     state["payload"] = []
-    response = request(method, path, token(OTHER))
+    response = request("POST", path, token(OTHER))
     assert response.status_code == 404 and response.json() == {"detail": "Capsule unavailable"}
 
 
@@ -189,16 +185,12 @@ def test_transport_failure_is_sanitized(setup, monkeypatch, caplog):
     assert BODY not in response.text + caplog.text and KEY not in response.text + caplog.text
 
 
-@pytest.mark.parametrize("payload", [
-    [{"id": OTHER, "body": BODY}], [{"id": CAPSULE, "body": BODY, "title": "unexpected"}],
-    [{"id": CAPSULE, "body": None}], [{"id": CAPSULE, "body": BODY}] * 2,
-])
-def test_reveal_rejects_invalid_rpc_payloads(setup, monkeypatch, payload):
+@pytest.mark.parametrize("path", ["/v1/direct-capsules/received", f"/v1/direct-capsules/{CAPSULE}/reveal"])
+def test_recipient_reads_have_no_public_routes_even_with_flag_enabled(setup, monkeypatch, path):
     token, state = setup
     monkeypatch.setenv("DIRECT_CAPSULES_ENABLED", "true")
-    state["payload"] = payload
-    response = request("GET", f"/v1/direct-capsules/{CAPSULE}/reveal", token())
-    assert response.status_code == 503 and BODY not in response.text and len(state["requests"]) == 1
+    response = request("GET", path, token())
+    assert response.status_code == 404 and BODY not in response.text and not state["requests"]
 
 
 def test_cancel_rejects_extra_request_data(setup, monkeypatch):

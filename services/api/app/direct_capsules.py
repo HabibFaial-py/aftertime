@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictStr, ValidationError, field_validator
 
 from app.auth import current_user
-from app.capsules import CapsuleCancellation, CapsuleReveal, CreateCapsule
+from app.capsules import CapsuleCancellation, CreateCapsule
 from app.config import DatabaseConfigurationError, get_database_settings
 from app.database import DatabaseInputError, DatabaseOwnerError, DatabaseUnavailableError
 
@@ -215,19 +215,6 @@ def cancel_direct_capsule(capsule_id: UUID, user_id: str = Depends(current_user)
     try:
         result = DirectCapsuleRepository().result("aftertime_cancel_direct_capsule", capsule_id,
                                                   user_id, CapsuleCancellation)
-    except (DatabaseConfigurationError, DatabaseUnavailableError):
-        raise HTTPException(status_code=503, detail="Capsule service unavailable") from None
-    if result is None:
-        raise HTTPException(status_code=404, detail="Capsule unavailable")
-    return result
-
-
-@router.get("/{capsule_id}/reveal", response_model=CapsuleReveal)
-def reveal_direct_capsule(capsule_id: UUID, user_id: str = Depends(current_user),
-                          _request: None = Depends(no_extra_request_data)) -> CapsuleReveal:
-    try:
-        result = DirectCapsuleRepository().result("aftertime_reveal_direct_capsule", capsule_id,
-                                                  user_id, CapsuleReveal)
     except (DatabaseConfigurationError, DatabaseUnavailableError):
         raise HTTPException(status_code=503, detail="Capsule service unavailable") from None
     if result is None:
