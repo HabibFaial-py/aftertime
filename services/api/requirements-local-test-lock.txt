@@ -1,0 +1,5 @@
+# Pinned local integration dependencies, verified on Python 3.11 / Windows x64.
+psycopg==3.3.9
+psycopg-binary==3.3.9
+typing-extensions==4.16.0
+tzdata==2026.6; sys_platform == "win32"

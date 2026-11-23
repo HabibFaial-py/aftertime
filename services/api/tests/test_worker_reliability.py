@@ -3,7 +3,9 @@ from uuid import UUID
 
 import pytest
 
-from app.invitation_delivery_worker import DeliveryUnavailable, TransitionOutcomeUnknown, transition_committed, verify_envelope
+from app.invitation_delivery_worker import (
+    DeliveryUnavailable, TransitionOutcomeUnknown, dispatch_transition_committed, transition_committed, verify_envelope,
+)
 from app.invitation_outbox import PerInvitationEncryptor
 
 
@@ -54,8 +56,8 @@ class Connection:
 
 
 def row(outcome="leased", token=TOKEN, generation=1):
-    until = datetime.now(timezone.utc) if outcome in {"leased", "prepared"} else None
-    if outcome not in {"leased", "prepared"}:
+    until = datetime.now(timezone.utc) if outcome in {"leased", "prepared", "reserved", "reconcile"} else None
+    if until is None:
         token = None
     return (outcome, JOB, token, generation, until, None, None, None, None, None, None, None, None)
 
@@ -135,6 +137,21 @@ def test_stale_generation_and_autocommit_fail_closed():
     with pytest.raises(DeliveryUnavailable):
         transition_committed(lambda: unsafe, JOB, "lease")
     assert "commit" not in unsafe.events
+
+
+@pytest.mark.parametrize("outcome,dispatch", [("reserved", 1), ("reconcile", None), ("reconcile", 3)])
+def test_v3_invalid_reservation_acknowledgement_rolls_back(outcome, dispatch):
+    connection = Connection([(*row(outcome, generation=2), dispatch)])
+    with pytest.raises(DeliveryUnavailable):
+        dispatch_transition_committed(lambda: connection, JOB, "reserve", TOKEN, 2)
+    assert "commit" not in connection.events and "rollback" in connection.events
+
+
+def test_v3_resolution_acknowledgement_must_match_supplied_attempt():
+    connection = Connection([(*row("sent", generation=3), 2)])
+    with pytest.raises(DeliveryUnavailable):
+        dispatch_transition_committed(lambda: connection, JOB, "accept", TOKEN, 3, 1)
+    assert "commit" not in connection.events and "rollback" in connection.events
 
 
 def test_cancelled_before_dispatch_and_unknown_commit_never_send():

@@ -63,25 +63,35 @@ class CommittedTransition:
     lease_generation: int
     lease_until: datetime | None
     envelope: DeliveryEnvelope | None = field(repr=False)
+    dispatch_generation: int | None = None
 
     def __repr__(self):
         return f"CommittedTransition(outcome={self.outcome!r}, <redacted>)"
 
 
-def _parse_transition(row, job_id: UUID, action: str) -> CommittedTransition:
-    if not isinstance(row, (tuple, list)) or len(row) != 13:
+_V2_OUTCOMES = {"lease": {"leased", "cancelled", "expired", "failed"},
+                "prepare": {"prepared", "cancelled", "expired"},
+                "sent": {"sent", "cancelled", "expired"},
+                "retry": {"retry", "failed", "cancelled", "expired"},
+                "fail": {"failed", "cancelled", "expired"}}
+_V3_OUTCOMES = {"lease": _V2_OUTCOMES["lease"],
+                "prepare": {"prepared", "reconcile", "cancelled", "expired"},
+                "reserve": {"reserved", "reconcile", "cancelled", "expired"},
+                "accept": _V2_OUTCOMES["sent"],
+                "reject": _V2_OUTCOMES["retry"],
+                "fail": _V2_OUTCOMES["fail"]}
+_LEASE_OUTCOMES = {"leased", "prepared", "reserved", "reconcile"}
+
+
+def _parse_transition(row, job_id: UUID, allowed: set[str], *, v3: bool) -> CommittedTransition:
+    if not isinstance(row, (tuple, list)) or len(row) != (14 if v3 else 13):
         raise ValueError("Invalid transition")
-    outcome, row_job, token, generation, until, capsule, invitation, email, key_id, nonce, salt, ciphertext, digest = row
-    allowed = {"lease": {"leased", "cancelled", "expired", "failed"},
-               "prepare": {"prepared", "cancelled", "expired"},
-               "sent": {"sent", "cancelled", "expired"},
-               "retry": {"retry", "failed", "cancelled", "expired"},
-               "fail": {"failed", "cancelled", "expired"}}
-    if (outcome not in allowed[action] or UUID(str(row_job)) != job_id
+    outcome, row_job, token, generation, until, capsule, invitation, email, key_id, nonce, salt, ciphertext, digest = row[:13]
+    if (outcome not in allowed or UUID(str(row_job)) != job_id
             or type(generation) is not int or generation < 0):
         raise ValueError("Invalid transition")
     envelope = None
-    if outcome in {"leased", "prepared"}:
+    if outcome in _LEASE_OUTCOMES:
         token = UUID(str(token))
         if generation < 1 or not isinstance(until, datetime) or until.tzinfo is None or until.utcoffset() is None:
             raise ValueError("Invalid transition")
@@ -95,38 +105,75 @@ def _parse_transition(row, job_id: UUID, action: str) -> CommittedTransition:
             raise ValueError("Invalid transition")
     elif any(value is not None for value in (token, until, capsule, invitation, email, key_id, nonce, salt, ciphertext, digest)):
         raise ValueError("Invalid transition")
-    return CommittedTransition(outcome, job_id, token, generation, until, envelope)
+    dispatch = row[13] if v3 else None
+    if dispatch is not None and (type(dispatch) is not int or not 1 <= dispatch <= generation):
+        raise ValueError("Invalid dispatch generation")
+    return CommittedTransition(outcome, job_id, token, generation, until, envelope, dispatch)
 
 
 def transition_committed(connection_factory, job_id: UUID, action: str,
                          token: UUID | None = None, generation: int | None = None) -> CommittedTransition | None:
-    """Use a fresh dedicated DB-API connection; expose results only after commit.
+    """Legacy v2 adapter. The worker role loses access to v2 in migration 0013."""
+    return _transition_committed(connection_factory, job_id, action, token, generation, None, v3=False)
 
-    A factory must open a new non-autocommit transaction and not share it. No
-    production factory is configured; this function never performs a send.
+
+def dispatch_transition_committed(connection_factory, job_id: UUID, action: str,
+                                  token: UUID | None = None, generation: int | None = None,
+                                  dispatch_generation: int | None = None) -> CommittedTransition | None:
+    """Use a fresh dedicated non-autocommit connection. Expose results after commit.
+
+    Only a committed reserved outcome authorizes one submission. Reconcile
+    outcomes carry an attempt identity for lookup. This adapter never sends.
     """
+    return _transition_committed(connection_factory, job_id, action, token, generation, dispatch_generation, v3=True)
+
+
+def _transition_committed(connection_factory, job_id, action, token, generation, dispatch_generation, *, v3):
     connection = cursor = None
     commit_started = False
     try:
+        outcomes = _V3_OUTCOMES if v3 else _V2_OUTCOMES
         if (not callable(connection_factory) or not isinstance(job_id, UUID)
-                or action not in {"lease", "prepare", "sent", "retry", "fail"}
+                or action not in outcomes
                 or (action == "lease" and (token is not None or generation is not None))
                 or (action != "lease" and (not isinstance(token, UUID) or type(generation) is not int or generation < 1))):
+            raise DeliveryUnavailable()
+        if action in {"accept", "reject"}:
+            if type(dispatch_generation) is not int or not 1 <= dispatch_generation <= generation:
+                raise DeliveryUnavailable()
+        elif dispatch_generation is not None:
             raise DeliveryUnavailable()
         connection = connection_factory()
         if connection.autocommit is not False:
             raise DeliveryUnavailable()
         cursor = connection.cursor()
-        cursor.execute("SELECT * FROM public.aftertime_invitation_worker_transition_v2(%s::uuid,%s::text,%s::uuid,%s::bigint)",
-                       (str(job_id), action, str(token) if token else None, generation))
+        args = (str(job_id), action, str(token) if token else None, generation)
+        if v3:
+            cursor.execute("SELECT * FROM public.aftertime_invitation_worker_transition_v3(%s::uuid,%s::text,%s::uuid,%s::bigint,%s::bigint)",
+                           (*args, dispatch_generation))
+        else:
+            cursor.execute("SELECT * FROM public.aftertime_invitation_worker_transition_v2(%s::uuid,%s::text,%s::uuid,%s::bigint)", args)
         rows = cursor.fetchall()
         if not isinstance(rows, (tuple, list)) or len(rows) > 1:
             raise DeliveryUnavailable()
-        result = _parse_transition(rows[0], job_id, action) if rows else None
+        result = _parse_transition(rows[0], job_id, outcomes[action], v3=v3) if rows else None
         if (result is not None and action != "lease"
                 and (result.lease_generation != generation
-                     or (result.outcome == "prepared" and result.lease_token != token))):
+                     or (result.outcome in _LEASE_OUTCOMES and result.lease_token != token))):
             raise DeliveryUnavailable()
+        if v3 and result is not None:
+            if result.outcome == "reserved":
+                expected_dispatch = generation
+            elif result.outcome == "reconcile":
+                expected_dispatch = result.dispatch_generation
+                if expected_dispatch is None:
+                    raise DeliveryUnavailable()
+            elif action in {"accept", "reject"} and result.outcome not in {"cancelled", "expired"}:
+                expected_dispatch = dispatch_generation
+            else:
+                expected_dispatch = None
+            if result.dispatch_generation != expected_dispatch:
+                raise DeliveryUnavailable()
         commit_started = True
         connection.commit()
         return result

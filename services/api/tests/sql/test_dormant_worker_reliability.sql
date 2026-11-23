@@ -43,7 +43,8 @@ COMMIT;
 DO $$ DECLARE fn regprocedure := 'public.aftertime_invitation_worker_transition_v2(uuid,text,uuid,bigint)'::regprocedure; BEGIN
   IF has_function_privilege('anon',fn,'EXECUTE') OR has_function_privilege('authenticated',fn,'EXECUTE')
      OR has_function_privilege('service_role',fn,'EXECUTE')
-     OR NOT has_function_privilege('aftertime_invitation_worker',fn,'EXECUTE')
+     OR has_function_privilege('aftertime_invitation_worker',fn,'EXECUTE') IS DISTINCT FROM
+        (to_regprocedure('public.aftertime_invitation_worker_transition_v3(uuid,text,uuid,bigint,bigint)') IS NULL)
      OR has_function_privilege('aftertime_invitation_worker','public.aftertime_invitation_worker_transition(uuid,uuid,text)','EXECUTE')
      OR has_table_privilege('aftertime_invitation_worker','public.invitation_delivery_outbox','SELECT,UPDATE') THEN
     RAISE EXCEPTION 'Unsafe v2 privileges';

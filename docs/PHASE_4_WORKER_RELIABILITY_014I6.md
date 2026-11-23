@@ -2,7 +2,6 @@
 
 ## Implemented changes
 
-Draft migration `services/api/migrations/0012_dormant_worker_reliability.sql` adds a lease generation and a revised worker transition RPC. It revokes the dedicated worker role's access to the earlier caller-token transition and grants it access to the new function; it does not create a login, enable direct capsules or change the 0006 `CHECK (false)` gate. The function returns distinct outcomes for successful `leased`, `prepared`, `sent`, `retry`, `failed`, `cancelled` and `expired` operations; a denied, locked, stale or otherwise inapplicable operation returns no row. Terminal states clear ciphertext and lease fields. Database function output is **provisional until its transaction commits**.
 
 `transition_committed` in `services/api/app/invitation_delivery_worker.py` is an unwired DB-API adapter. It requires a caller-supplied fresh, dedicated, non-autocommit connection; validates the returned row and requested job/token/generation; commits before returning an acknowledgement; and closes the cursor and connection. A commit exception raises the generic `TransitionOutcomeUnknown`, never a success, and the adapter does not retry. Empty results are returned as `None` only after a successful commit; they do not identify why the operation was inapplicable. The factory's promise to supply a fresh, isolated connection is a contract, not something generic DB-API can prove. No production connection factory is configured, and `run_delivery()` still fails closed.
 

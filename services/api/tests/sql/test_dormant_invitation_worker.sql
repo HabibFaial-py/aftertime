@@ -47,7 +47,8 @@ BEGIN
      OR NOT has_function_privilege('aftertime_invitation_worker', candidates, 'EXECUTE')
      OR has_function_privilege('anon', v2, 'EXECUTE') OR has_function_privilege('authenticated', v2, 'EXECUTE')
      OR has_function_privilege('service_role', v2, 'EXECUTE')
-     OR NOT has_function_privilege('aftertime_invitation_worker', v2, 'EXECUTE')
+     OR has_function_privilege('aftertime_invitation_worker', v2, 'EXECUTE') IS DISTINCT FROM
+        (to_regprocedure('public.aftertime_invitation_worker_transition_v3(uuid,text,uuid,bigint,bigint)') IS NULL)
      OR has_table_privilege('aftertime_invitation_worker','public.invitation_delivery_outbox','SELECT,INSERT,UPDATE,DELETE')
      OR EXISTS (SELECT FROM pg_roles WHERE rolname='aftertime_invitation_worker' AND (rolcanlogin OR rolinherit)) THEN
     RAISE EXCEPTION 'Unsafe worker privileges';
@@ -70,7 +71,11 @@ DO $$ BEGIN
   BEGIN PERFORM public.aftertime_invitation_worker_transition(NULL,NULL,'lease');
     RAISE EXCEPTION 'worker legacy RPC allowed'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
   PERFORM public.aftertime_invitation_worker_candidates();
-  PERFORM public.aftertime_invitation_worker_transition_v2(NULL,'lease',NULL,NULL);
+  IF to_regprocedure('public.aftertime_invitation_worker_transition_v3(uuid,text,uuid,bigint,bigint)') IS NULL THEN
+    PERFORM public.aftertime_invitation_worker_transition_v2(NULL,'lease',NULL,NULL);
+  ELSE
+    PERFORM public.aftertime_invitation_worker_transition_v3(NULL,'lease',NULL,NULL,NULL);
+  END IF;
   BEGIN PERFORM ciphertext FROM public.invitation_delivery_outbox;
     RAISE EXCEPTION 'worker direct table access allowed'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
