@@ -1,5 +1,11 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014J-6 Android recipient acceptance
+
+- Inspected the installed Android SDK. `adb devices -l` listed no device, and `emulator -list-avds` listed no virtual device. With no installed system image, the user chose offline verification. Native rendering, small-screen and large-text behavior, TalkBack and Android Back remain pending. See [the #014J-6 report](PHASE_4_ANDROID_ACCEPTANCE_014J6.md).
+- From `apps/mobile`, `npm test` passed **56 tests**, including **14 Received cases**. `npm run lint`, `npm run typecheck` and the opted-in offline Android development bundle export passed. Git whitespace checks passed. No defect was confirmed by the offline checks, so app code and tests were unchanged. The direct flag still defaults off and the database gates remain in place.
+- Next task is to attach an authorized Android device or start a configured emulator and run the existing preview with an isolated synthetic session. Verify TalkBack, large text, scrolling, rapid taps, refresh, Android Back and session interruption on the device.
+
 ## Phase 4 — Prompt #014J-5 Android Received Capsules presentation
 
 - Extended the existing Received screen with a development-only synthetic inbox behind the signed-in direct feature gate. It displays metadata-only locked and unlocked cards, loading, empty, unavailable and retryable error states. An explicit Reveal action displays a successful response separately. Generic denial covers withdrawal through cancellation, deletion or revocation. Refresh removes the withdrawn fixture, and ambiguous results require refresh and another explicit action. Blur, refresh, scenario and session changes clear the message and suppress late responses. See [the #014J-5 report](PHASE_4_ANDROID_RECIPIENT_014J5.md).

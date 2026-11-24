@@ -1,0 +1,2 @@
+# Optional local PostgreSQL integration tests only; not a production worker dependency.
+psycopg[binary]==3.3.9
