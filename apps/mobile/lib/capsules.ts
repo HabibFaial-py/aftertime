@@ -8,8 +8,16 @@ export type CancelCapsuleResponse = { id: string; cancelled_at: string };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const isTimestamp = (value: unknown): value is string => typeof value === 'string' && iso.test(value) && Number.isFinite(Date.parse(value));
 const isUuid = (value: unknown): value is string => typeof value === 'string' && uuid.test(value);
+
+function isTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || !iso.test(value) || !Number.isFinite(Date.parse(value))) return false;
+
+  // Check the written date separately because parsing can roll invalid days into the next month.
+  const date = value.slice(0, 10);
+  const calendarDate = new Date(`${date}T00:00:00Z`);
+  return Number.isFinite(calendarDate.getTime()) && calendarDate.toISOString().slice(0, 10) === date;
+}
 
 function record(value: unknown, keys: string[]): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error();

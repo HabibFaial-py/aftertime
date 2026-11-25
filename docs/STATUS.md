@@ -1,5 +1,11 @@
 # AfterTime status
 
+## Phase 4 — Prompt #014J-7 mobile unlock time validation
+
+- The shared mobile timestamp validator now rejects impossible calendar dates that JavaScript would roll into the next month. A mocked capsule-list regression failed before the fix and now rejects February 30 and a non-leap February 29 while preserving a valid leap-day timestamp with fractional seconds and an explicit offset.
+- From `apps/mobile`, `npm test` passed **57 tests**, and `npm run lint` and `npm run typecheck` passed. From the repository root, `git diff --check` passed with Windows line-ending warnings only.
+- Next task is the pending Android recipient acceptance pass when a device or configured emulator is available.
+
 ## Phase 4 — Prompt #014J-6 Android recipient acceptance
 
 - Inspected the installed Android SDK. `adb devices -l` listed no device, and `emulator -list-avds` listed no virtual device. With no installed system image, the user chose offline verification. Native rendering, small-screen and large-text behavior, TalkBack and Android Back remain pending. See [the #014J-6 report](PHASE_4_ANDROID_ACCEPTANCE_014J6.md).

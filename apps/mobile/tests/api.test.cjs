@@ -114,6 +114,17 @@ test('list validates metadata, pagination and refuses private fields', async () 
   assert.throws(() => capsules.listCapsules(id, signal(), 51), { kind: 'response' });
 });
 
+test('list rejects impossible unlock dates and preserves a valid leap day with an offset', async () => {
+  const item = { id, title: 'title', unlock_at: '2028-02-29T00:15:00.123456+05:45', created_at: time, status: 'locked' };
+  global.fetch = async () => response(200, [item]);
+  assert.deepEqual(await capsules.listCapsules(id, signal()), [item]);
+
+  for (const unlock_at of ['2028-02-30T00:15:00+05:45', '2027-02-29T00:15:00Z']) {
+    global.fetch = async () => response(200, [{ ...item, unlock_at }]);
+    await assert.rejects(capsules.listCapsules(id, signal()), { kind: 'response' });
+  }
+});
+
 test('reveal is explicit, validates ID and does not persist private content', async () => {
   let calls = 0;
   global.fetch = async (url) => { calls++; assert.match(url, /\/reveal$/); return response(200, { id, body: 'private' }); };
