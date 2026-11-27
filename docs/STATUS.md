@@ -1,5 +1,12 @@
 # AfterTime status
 
+## Prompt #014K-1 — mobile API error handling
+
+- A self-capsule cancellation response with a `24:00:00` timestamp could be misread as success because JavaScript rolls that time into the next day. `apps/mobile/lib/capsules.ts` now accepts hours `00` through `23`. An invalid cancellation response shows the existing generic warning and asks the user to refresh the capsule list.
+- `apps/mobile/tests/api.test.cjs` reproduces the false success before the fix. It now verifies the generic warning, cleared detail state and a single cancellation POST even after another confirmation attempt.
+- From `apps/mobile`, `npm test` passed **59 tests**, `npm run lint` passed and `npm run typecheck` passed. From the repository root, `git diff --check` passed with Windows line-ending warnings only.
+- Verification used mocked API responses. Android device testing remains postponed after Windows CMake/Ninja path issues. Next task is the pending Android acceptance pass when device testing resumes.
+
 ## Phase 4 — Prompt #014J-7 mobile unlock time validation
 
 - The shared mobile timestamp validator now rejects impossible calendar dates that JavaScript would roll into the next month. A mocked capsule-list regression failed before the fix and now rejects February 30 and a non-leap February 29 while preserving a valid leap-day timestamp with fractional seconds and an explicit offset.

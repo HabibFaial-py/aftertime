@@ -24,6 +24,7 @@ function load(name, dependencies) {
 }
 const api = load('api', { './supabase': { supabase: mockSupabase } });
 const capsules = load('capsules', { './api': api });
+const { CapsuleDetailController } = load('capsule-detail', { './api': api, './capsules': capsules });
 const id = 'e3216d4c-9b6e-4f8b-8493-7e3a3ac7da80';
 const time = '2026-11-14T10:00:00Z';
 const signal = () => new AbortController().signal;
@@ -138,4 +139,30 @@ test('reveal is explicit, validates ID and does not persist private content', as
 test('cancellation sends no body and validates response', async () => {
   global.fetch = async (_url, options) => { assert.equal(options.method, 'POST'); assert.equal(options.body, undefined); return response(200, { id, cancelled_at: time }); };
   assert.deepEqual(await capsules.cancelCapsule(id, signal(), id), { id, cancelled_at: time });
+});
+
+test('cancellation with a 24:00 response stays uncertain and is never retried', async () => {
+  const requests = [];
+  global.fetch = async (url, { method }) => {
+    requests.push([method, new URL(url).pathname]);
+    if (method === 'GET') {
+      return response(200, [{ id, title: 'title', unlock_at: time, created_at: time, status: 'locked' }]);
+    }
+    return response(200, { id, cancelled_at: '2026-11-14T24:00:00Z' });
+  };
+
+  const states = [];
+  const detail = new CapsuleDetailController(id, id, (state) => states.push(state));
+  await detail.load();
+  detail.requestCancellation();
+  assert.equal(states.at(-1).phase, 'confirmCancel');
+  assert.equal(await detail.confirmCancellation(), false);
+  assert.deepEqual(states.at(-1), {
+    phase: 'cancelUncertain', metadata: null, body: null,
+    error: 'The service could not confirm cancellation. Cancellation may have succeeded. Refresh your capsule list before trying again.',
+  });
+
+  detail.requestCancellation();
+  assert.equal(await detail.confirmCancellation(), false);
+  assert.deepEqual(requests, [['GET', '/v1/capsules'], ['POST', `/v1/capsules/${id}/cancel`]]);
 });

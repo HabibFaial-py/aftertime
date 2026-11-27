@@ -7,7 +7,7 @@ export type RevealCapsuleResponse = { id: string; body: string };
 export type CancelCapsuleResponse = { id: string; cancelled_at: string };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const iso = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const isUuid = (value: unknown): value is string => typeof value === 'string' && uuid.test(value);
 
 function isTimestamp(value: unknown): value is string {
